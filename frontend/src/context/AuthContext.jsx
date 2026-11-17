@@ -1,14 +1,25 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi } from '../api';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user_data');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('user_data');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
   const [loading, setLoading] = useState(true);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user_data');
+    setUser(null);
+  }, []);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -23,12 +34,13 @@ export const AuthProvider = ({ children }) => {
             role: res.data.role,
             full_name: res.data.full_name,
             phone_number: res.data.phone_number,
+            profile_id: res.data.profile_id,
             profile: res.data.profile,
           };
           setUser(userData);
           localStorage.setItem('user_data', JSON.stringify(userData));
         } catch (err) {
-          console.error('Session expired or invalid token:', err);
+          console.warn('Session expired or invalid token, clearing session:', err);
           logout();
         }
       }
@@ -36,7 +48,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     initAuth();
-  }, []);
+  }, [logout]);
 
   const login = async (username, password) => {
     const res = await authApi.login(username, password);
@@ -47,13 +59,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user_data', JSON.stringify(userInfo));
     setUser(userInfo);
     return userInfo;
-  };
-
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user_data');
-    setUser(null);
   };
 
   const isAdmin = user?.role === 'ADMIN';

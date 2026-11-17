@@ -40,13 +40,15 @@ export const ReportsPage = () => {
           batchApi.getMyBatches(),
           userApi.getStudents(),
         ]);
-        setBatches(bRes.data || []);
-        setStudents(sRes.data.results || sRes.data || []);
-        if (bRes.data.length > 0 && sRes.data.results?.length > 0) {
+        const batchList = bRes.data || [];
+        const studentList = sRes.data.results || sRes.data || [];
+        setBatches(batchList);
+        setStudents(studentList);
+        if (batchList.length > 0 && studentList.length > 0) {
           setFormData((prev) => ({
             ...prev,
-            batch_id: bRes.data[0].id,
-            student_id: sRes.data.results[0].id,
+            batch_id: batchList[0].id,
+            student_id: studentList[0].id,
           }));
         }
       }

@@ -35,14 +35,20 @@ class CurrentUserView(generics.RetrieveUpdateAPIView):
         data = serializer.data
 
         # Add profile details
+        profile_id = None
         if user.role == 'TUTOR' and hasattr(user, 'tutor_profile'):
+            profile_id = user.tutor_profile.id
             data['profile'] = TutorProfileSerializer(user.tutor_profile).data
         elif user.role == 'PARENT' and hasattr(user, 'parent_profile'):
+            profile_id = user.parent_profile.id
             data['profile'] = ParentProfileSerializer(user.parent_profile).data
         elif user.role == 'STUDENT' and hasattr(user, 'student_profile'):
+            profile_id = user.student_profile.id
             data['profile'] = StudentProfileSerializer(user.student_profile).data
         else:
             data['profile'] = None
+
+        data['profile_id'] = profile_id
 
         return Response(data)
 

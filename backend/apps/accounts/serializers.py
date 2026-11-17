@@ -20,12 +20,16 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         user = self.user
 
         profile_id = None
+        profile_data = None
         if user.role == 'TUTOR' and hasattr(user, 'tutor_profile'):
             profile_id = user.tutor_profile.id
+            profile_data = TutorProfileSerializer(user.tutor_profile).data
         elif user.role == 'PARENT' and hasattr(user, 'parent_profile'):
             profile_id = user.parent_profile.id
+            profile_data = ParentProfileSerializer(user.parent_profile).data
         elif user.role == 'STUDENT' and hasattr(user, 'student_profile'):
             profile_id = user.student_profile.id
+            profile_data = StudentProfileSerializer(user.student_profile).data
 
         data['user'] = {
             'id': user.id,
@@ -37,6 +41,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'full_name': user.get_full_name() or user.username,
             'phone_number': user.phone_number,
             'profile_id': profile_id,
+            'profile': profile_data,
         }
         return data
 

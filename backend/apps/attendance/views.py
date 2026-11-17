@@ -142,6 +142,20 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
         if not student_id:
             if user.role == 'STUDENT' and hasattr(user, 'student_profile'):
                 student_id = user.student_profile.id
+            elif user.role == 'PARENT' and hasattr(user, 'parent_profile'):
+                first_child = user.parent_profile.children.first()
+                if first_child:
+                    student_id = first_child.id
+                else:
+                    return Response({
+                        'student_id': None,
+                        'total_sessions': 0,
+                        'present_count': 0,
+                        'absent_count': 0,
+                        'late_count': 0,
+                        'excused_count': 0,
+                        'attendance_percentage': 100.0,
+                    })
             else:
                 return Response({'error': 'student_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 

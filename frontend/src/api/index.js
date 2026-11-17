@@ -36,7 +36,10 @@ export const feeApi = {
   createInvoice: (data) => client.post('/fees/invoices/', data),
   recordPayment: (invoiceId, data) => client.post(`/fees/invoices/${invoiceId}/record_payment/`, data),
   getSummary: () => client.get('/fees/invoices/summary/'),
-  downloadReceiptUrl: (paymentId) => `${client.defaults.baseURL}/fees/receipts/${paymentId}/download/`,
+  downloadReceiptUrl: (paymentId) => {
+    const token = localStorage.getItem('access_token');
+    return `${client.defaults.baseURL}/fees/receipts/${paymentId}/download/${token ? `?token=${token}` : ''}`;
+  },
 };
 
 export const reportApi = {
@@ -46,7 +49,10 @@ export const reportApi = {
   getProgressReports: (params) => client.get('/reports/progress-reports/', { params }),
   createProgressReport: (data) => client.post('/reports/progress-reports/', data),
   autoCalculate: (studentId, batchId) => client.post('/reports/progress-reports/auto_calculate/', { student_id: studentId, batch_id: batchId }),
-  downloadPdfUrl: (reportId) => `${client.defaults.baseURL}/reports/progress-reports/${reportId}/download_pdf/`,
+  downloadPdfUrl: (reportId) => {
+    const token = localStorage.getItem('access_token');
+    return `${client.defaults.baseURL}/reports/progress-reports/${reportId}/download_pdf/${token ? `?token=${token}` : ''}`;
+  },
 };
 
 export const userApi = {
