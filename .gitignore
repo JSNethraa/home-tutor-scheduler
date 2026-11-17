@@ -27,3 +27,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Production environment files
+.env.*
+!.env.example
+

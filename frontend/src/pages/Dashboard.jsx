@@ -23,7 +23,11 @@ export const Dashboard = () => {
           scheduleApi.getSessions({ start_date: new Date().toISOString().split('T')[0] }),
         ]);
         setBatches(batchRes.data || []);
-        setSessions(sessionRes.data || []);
+        setSessions(
+          Array.isArray(sessionRes.data)
+            ? sessionRes.data
+            : sessionRes.data?.results || []
+        );
 
         if (isAdmin) {
           const feeRes = await feeApi.getSummary();
