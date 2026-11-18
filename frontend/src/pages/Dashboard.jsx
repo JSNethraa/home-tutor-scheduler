@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { batchApi, scheduleApi, feeApi, attendanceApi } from '../api';
 import { StatCard } from '../components/StatCard';
 import { Badge } from '../components/Badge';
-import { Users, Calendar, CreditCard, CheckCircle2, Clock, AlertTriangle, ArrowUpRight } from 'lucide-react';
+import { Users, Calendar, CreditCard, CheckCircle2, Clock, AlertTriangle, ArrowUpRight, CheckSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const Dashboard = () => {
@@ -61,6 +61,15 @@ export const Dashboard = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {(isStudent || isParent) && (
+              <Link
+                to="/attendance"
+                className="px-4 py-2.5 bg-blue-700/80 hover:bg-blue-600 text-white rounded-xl font-semibold text-sm transition shadow-sm flex items-center gap-1.5 border border-blue-500/50"
+              >
+                <CheckSquare className="w-4 h-4" />
+                <span>Track Attendance</span>
+              </Link>
+            )}
             <Link
               to="/schedule"
               className="px-4 py-2.5 bg-white text-blue-900 rounded-xl font-semibold text-sm hover:bg-blue-50 transition shadow-sm flex items-center gap-1.5"

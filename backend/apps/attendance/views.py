@@ -14,7 +14,7 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
     serializer_class = AttendanceRecordSerializer
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'student_stats', 'session_sheet']:
+        if self.action in ['list', 'retrieve', 'student_stats', 'session_sheet', 'change_status']:
             return [IsAuthenticated()]
         return [IsAdminOrTutor()]
 
@@ -184,3 +184,44 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
             'excused_count': excused,
             'attendance_percentage': percentage,
         })
+
+    @action(detail=True, methods=['post', 'patch'], permission_classes=[IsAuthenticated])
+    def change_status(self, request, pk=None):
+        """
+        Allows enrolled students (with tutor/user assistance) or authorized tutors/admins
+        to check an attendance record status and update it accordingly with audit remarks.
+        """
+        record = self.get_object()
+        user = request.user
+        new_status = request.data.get('status')
+        remarks = (request.data.get('remarks') or '').strip()
+        assisted_by = (request.data.get('assisted_by') or '').strip()
+
+        if not new_status:
+            return Response({'error': 'status is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        valid_statuses = [choice[0] for choice in AttendanceRecord.STATUS_CHOICES]
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f"Invalid status '{new_status}'. Must be one of: {', '.join(valid_statuses)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_status = record.status
+        record.status = new_status
+
+        # Document the change in remarks for clear audit trail
+        if user.role == 'STUDENT':
+            helper_str = f"with help of user: {assisted_by}" if assisted_by else "with user assistance"
+            note_str = f" - Reason: {remarks}" if remarks else ""
+            record.remarks = f"Status updated from {old_status} to {new_status} ({helper_str}){note_str}"
+        elif user.role == 'PARENT':
+            record.remarks = f"Parent submitted change from {old_status} to {new_status}. {remarks}".strip()
+        else:
+            role_label = 'Admin' if user.role == 'ADMIN' else 'Tutor'
+            actor_name = user.get_full_name() or user.username
+            note_str = f": {remarks}" if remarks else ""
+            record.remarks = f"{remarks} (Updated by {role_label} {actor_name})".strip() if remarks else f"Status changed from {old_status} to {new_status} by {role_label} {actor_name}"
+
+        record.save()
+        return Response(AttendanceRecordSerializer(record).data, status=status.HTTP_200_OK)

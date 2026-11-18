@@ -2,15 +2,28 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { attendanceApi, scheduleApi, batchApi } from '../api';
 import { Badge } from '../components/Badge';
-import { CheckSquare, Save, Calendar, UserCheck, AlertCircle, Clock, Users, ChevronRight } from 'lucide-react';
+import { Modal } from '../components/Modal';
+import {
+  CheckSquare,
+  Save,
+  Calendar,
+  UserCheck,
+  AlertCircle,
+  Clock,
+  Users,
+  ChevronRight,
+  Edit3,
+  CheckCircle2,
+  HelpCircle,
+} from 'lucide-react';
 
 export const AttendancePage = () => {
-  const { isTutor, isAdmin, isParent, isStudent } = useAuth();
+  const { user, isTutor, isAdmin, isParent, isStudent } = useAuth();
 
-  // Tab mode: 'mark' | 'track'
-  const [activeTab, setActiveTab] = useState('mark');
+  // Tab mode: students/parents always start on 'track', tutors/admins on 'mark'
+  const [activeTab, setActiveTab] = useState(isStudent || isParent ? 'track' : 'mark');
 
-  // Mark Session State
+  // Mark Session State (for Tutors and Admins)
   const [sessions, setSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [sessionSheet, setSessionSheet] = useState(null);
@@ -31,6 +44,34 @@ export const AttendancePage = () => {
   const [trackingStats, setTrackingStats] = useState(null);
   const [loadingTrackRecords, setLoadingTrackRecords] = useState(false);
 
+  // Status Change / Correction Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [newStatus, setNewStatus] = useState('PRESENT');
+  const [statusRemarks, setStatusRemarks] = useState('');
+  const [assistedBy, setAssistedBy] = useState('');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [trackerSuccessMsg, setTrackerSuccessMsg] = useState('');
+
+  // Load student tracking records helper
+  const loadStudentRecords = async (st, batchIdToUse) => {
+    setSelectedStudentForTrack(st);
+    setLoadingTrackRecords(true);
+    setTrackerSuccessMsg('');
+    try {
+      const [recordsRes, statsRes] = await Promise.all([
+        attendanceApi.getRecords({ student_id: st.student_id, batch_id: batchIdToUse }),
+        attendanceApi.getStudentStats(st.student_id, batchIdToUse),
+      ]);
+      setTrackingRecords(recordsRes.data.results || recordsRes.data || []);
+      setTrackingStats(statsRes.data);
+    } catch (err) {
+      console.error('Error loading student attendance records:', err);
+    } finally {
+      setLoadingTrackRecords(false);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -46,8 +87,29 @@ export const AttendancePage = () => {
 
         const batchList = batchRes.data || [];
         setBatches(batchList);
+
         if (batchList.length > 0) {
-          setSelectedBatchId(batchList[0].id);
+          const firstBatch = batchList[0];
+          setSelectedBatchId(firstBatch.id);
+
+          // If logged in as student or parent, auto-select their student profile to view immediately
+          if (firstBatch.enrolled_students && firstBatch.enrolled_students.length > 0) {
+            let targetStudent = null;
+            if (isStudent) {
+              targetStudent =
+                firstBatch.enrolled_students.find(
+                  (s) =>
+                    s.student_id === user?.profile_id ||
+                    s.student_name?.toLowerCase().includes((user?.full_name || user?.username || '').toLowerCase())
+                ) || firstBatch.enrolled_students[0];
+            } else if (isParent) {
+              targetStudent = firstBatch.enrolled_students[0];
+            }
+
+            if (targetStudent) {
+              loadStudentRecords(targetStudent, firstBatch.id);
+            }
+          }
         }
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -59,7 +121,7 @@ export const AttendancePage = () => {
     if (isStudent || isParent) {
       attendanceApi.getStudentStats().then((res) => setStats(res.data)).catch(() => {});
     }
-  }, [isStudent, isParent]);
+  }, [user, isStudent, isParent]);
 
   // Load session sheet when selectedSessionId changes
   useEffect(() => {
@@ -83,22 +145,31 @@ export const AttendancePage = () => {
     loadSheet();
   }, [selectedSessionId, activeTab]);
 
-  // Load student tracking records
-  const handleSelectStudentForTrack = async (st) => {
-    setSelectedStudentForTrack(st);
-    setLoadingTrackRecords(true);
-    try {
-      const [recordsRes, statsRes] = await Promise.all([
-        attendanceApi.getRecords({ student_id: st.student_id, batch_id: selectedBatchId }),
-        attendanceApi.getStudentStats(st.student_id, selectedBatchId),
-      ]);
-      setTrackingRecords(recordsRes.data.results || recordsRes.data || []);
-      setTrackingStats(statsRes.data);
-    } catch (err) {
-      console.error('Error loading student attendance records:', err);
-    } finally {
-      setLoadingTrackRecords(false);
+  const handleBatchSelectChange = (newBatchId) => {
+    setSelectedBatchId(newBatchId);
+    const targetBatch = batches.find((b) => b.id === parseInt(newBatchId));
+    if (targetBatch?.enrolled_students && targetBatch.enrolled_students.length > 0) {
+      let targetStudent = null;
+      if (isStudent) {
+        targetStudent =
+          targetBatch.enrolled_students.find(
+            (s) =>
+              s.student_id === user?.profile_id ||
+              s.student_name?.toLowerCase().includes((user?.full_name || user?.username || '').toLowerCase())
+          ) || targetBatch.enrolled_students[0];
+      } else if (isParent) {
+        targetStudent = targetBatch.enrolled_students[0];
+      }
+
+      if (targetStudent) {
+        loadStudentRecords(targetStudent, newBatchId);
+        return;
+      }
     }
+
+    setSelectedStudentForTrack(null);
+    setTrackingRecords([]);
+    setTrackingStats(null);
   };
 
   const handleStatusChange = (studentId, status) => {
@@ -137,7 +208,69 @@ export const AttendancePage = () => {
     }
   };
 
+  // Status Change Modal Handlers
   const currentBatch = batches.find((b) => b.id === parseInt(selectedBatchId));
+
+  const handleOpenEditStatus = (rec) => {
+    setEditingRecord(rec);
+    setNewStatus(rec.status || 'PRESENT');
+    setStatusRemarks(rec.remarks || '');
+    const defaultHelper =
+      currentBatch?.tutor?.user?.full_name ||
+      user?.full_name ||
+      'Tutor Ramesh (Lead Instructor)';
+    setAssistedBy(defaultHelper);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveStatusChange = async (e) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+    setUpdatingStatus(true);
+    setTrackerSuccessMsg('');
+    try {
+      const payload = {
+        status: newStatus,
+        remarks: statusRemarks,
+        assisted_by: assistedBy,
+      };
+      const res = await attendanceApi.changeStatus(editingRecord.id, payload);
+      const updated = res.data;
+
+      // Update the record in table
+      setTrackingRecords((prev) =>
+        prev.map((r) => (r.id === updated.id ? updated : r))
+      );
+
+      // Refresh student statistics
+      if (selectedStudentForTrack) {
+        const statsRes = await attendanceApi.getStudentStats(
+          selectedStudentForTrack.student_id,
+          selectedBatchId
+        );
+        setTrackingStats(statsRes.data);
+      }
+
+      // Refresh overall student statistics
+      if (isStudent || isParent) {
+        const overallRes = await attendanceApi.getStudentStats();
+        setStats(overallRes.data);
+      }
+
+      // Refresh batches so badges update
+      const batchRes = await batchApi.getMyBatches();
+      setBatches(batchRes.data || []);
+
+      setTrackerSuccessMsg(
+        `Attendance status for session on ${updated.session_date} was successfully updated to ${updated.status}!`
+      );
+      setIsEditModalOpen(false);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to change attendance status.');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -145,7 +278,7 @@ export const AttendancePage = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Attendance Tracker</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Log student presence, track individual attendance compliance, and view historical class logs.
+            Track enrolled student attendance, check session status, and adjust records with user assistance.
           </p>
         </div>
 
@@ -156,8 +289,12 @@ export const AttendancePage = () => {
               <p className="text-lg font-bold text-green-600">{stats.attendance_percentage}%</p>
             </div>
             <div className="text-xs text-gray-500 border-l border-gray-100 pl-3 space-y-0.5">
-              <div>Present: <span className="font-semibold text-gray-800">{stats.present_count}</span></div>
-              <div>Absent: <span className="font-semibold text-red-600">{stats.absent_count}</span></div>
+              <div>
+                Present: <span className="font-semibold text-gray-800">{stats.present_count}</span>
+              </div>
+              <div>
+                Absent: <span className="font-semibold text-red-600">{stats.absent_count}</span>
+              </div>
             </div>
           </div>
         )}
@@ -165,19 +302,23 @@ export const AttendancePage = () => {
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 gap-4">
-        <button
-          type="button"
-          onClick={() => setActiveTab('mark')}
-          className={`pb-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 ${
-            activeTab === 'mark'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-gray-500 hover:text-gray-800'
-          }`}
-        >
-          <CheckSquare className="w-4 h-4" />
-          <span>Mark Class Attendance</span>
-        </button>
+        {/* Tutors & Admins can mark daily session attendance */}
+        {(isTutor || isAdmin) && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('mark')}
+            className={`pb-3 font-semibold text-sm border-b-2 transition flex items-center gap-2 ${
+              activeTab === 'mark'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <CheckSquare className="w-4 h-4" />
+            <span>Mark Class Attendance</span>
+          </button>
+        )}
 
+        {/* All roles, including enrolled students, can track attendance history */}
         <button
           type="button"
           onClick={() => setActiveTab('track')}
@@ -188,12 +329,14 @@ export const AttendancePage = () => {
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span>Track Student Attendance History</span>
+          <span>
+            {isStudent ? 'My Enrolled Attendance Tracker' : 'Track Student Attendance History'}
+          </span>
         </button>
       </div>
 
       {/* TAB 1: MARK DAILY SESSION ATTENDANCE */}
-      {activeTab === 'mark' && (
+      {activeTab === 'mark' && (isTutor || isAdmin) && (
         <div className="space-y-6">
           {/* Session Selector */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -229,16 +372,14 @@ export const AttendancePage = () => {
                   </p>
                 </div>
 
-                {(isTutor || isAdmin) && (
-                  <button
-                    type="submit"
-                    disabled={saving || students.length === 0}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm rounded-xl shadow-sm transition disabled:opacity-50"
-                  >
-                    <Save className="w-4 h-4" />
-                    <span>{saving ? 'Saving...' : 'Save Attendance Sheet'}</span>
-                  </button>
-                )}
+                <button
+                  type="submit"
+                  disabled={saving || students.length === 0}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm rounded-xl shadow-sm transition disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{saving ? 'Saving...' : 'Save Attendance Sheet'}</span>
+                </button>
               </div>
 
               {successMsg && (
@@ -249,20 +390,18 @@ export const AttendancePage = () => {
               )}
 
               {/* Topic Covered Input */}
-              {(isTutor || isAdmin) && (
-                <div className="p-6 border-b border-gray-100 bg-white">
-                  <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
-                    Class Syllabus / Topic Covered Today
-                  </label>
-                  <input
-                    type="text"
-                    value={topicCovered}
-                    onChange={(e) => setTopicCovered(e.target.value)}
-                    placeholder="e.g. Chapter 3: Laws of Motion, Friction Numerical Examples"
-                    className="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm"
-                  />
-                </div>
-              )}
+              <div className="p-6 border-b border-gray-100 bg-white">
+                <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                  Class Syllabus / Topic Covered Today
+                </label>
+                <input
+                  type="text"
+                  value={topicCovered}
+                  onChange={(e) => setTopicCovered(e.target.value)}
+                  placeholder="e.g. Chapter 3: Laws of Motion, Friction Numerical Examples"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm"
+                />
+              </div>
 
               {loading ? (
                 <div className="py-20 text-center text-gray-400">Loading student roster...</div>
@@ -304,7 +443,6 @@ export const AttendancePage = () => {
                                   <button
                                     key={stType}
                                     type="button"
-                                    disabled={!(isTutor || isAdmin)}
                                     onClick={() => handleStatusChange(st.student_id, stType)}
                                     className={`px-2.5 py-1 text-xs rounded-md transition ${colors[stType]}`}
                                   >
@@ -317,7 +455,6 @@ export const AttendancePage = () => {
                           <td className="px-6 py-4">
                             <input
                               type="text"
-                              disabled={!(isTutor || isAdmin)}
                               value={st.remarks || ''}
                               onChange={(e) => handleRemarkChange(st.student_id, e.target.value)}
                               placeholder="e.g. Arrived on time, answered board questions"
@@ -335,33 +472,57 @@ export const AttendancePage = () => {
         </div>
       )}
 
-      {/* TAB 2: TRACK STUDENT ATTENDANCE HISTORY */}
+      {/* TAB 2: TRACK STUDENT ATTENDANCE HISTORY (ACCESSIBLE TO ALL ROLES) */}
       {activeTab === 'track' && (
         <div className="space-y-6">
+          {/* Success Banner after Status Update */}
+          {trackerSuccessMsg && (
+            <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm font-semibold flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <span>{trackerSuccessMsg}</span>
+              </div>
+              <button
+                onClick={() => setTrackerSuccessMsg('')}
+                className="text-xs text-green-700 underline font-normal"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Select Batch */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
-              Select Batch / Course to Track
-            </label>
-            <select
-              value={selectedBatchId}
-              onChange={(e) => {
-                setSelectedBatchId(e.target.value);
-                setSelectedStudentForTrack(null);
-                setTrackingRecords([]);
-                setTrackingStats(null);
-              }}
-              className="w-full md:w-1/2 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {batches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.enrolled_count} students)
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="w-full sm:w-1/2">
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Select Batch / Course
+                </label>
+                <select
+                  value={selectedBatchId}
+                  onChange={(e) => handleBatchSelectChange(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.enrolled_count} students) — {b.subject}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {isStudent && (
+                <div className="flex items-center gap-2 p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-900">
+                  <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span>
+                    Logged in as enrolled student. Review attendance and update status with user/tutor help.
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Enrolled Students in Selected Batch */}
+          {/* Grid Layout: Enrolled Students Directory & Attendance History */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left: Students Roster List */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -370,7 +531,7 @@ export const AttendancePage = () => {
                 <span>Enrolled Students</span>
               </h2>
 
-              {(!currentBatch?.enrolled_students || currentBatch.enrolled_students.length === 0) ? (
+              {!currentBatch?.enrolled_students || currentBatch.enrolled_students.length === 0 ? (
                 <div className="py-8 text-center text-xs text-gray-400">
                   No students currently enrolled in this batch.
                 </div>
@@ -379,13 +540,14 @@ export const AttendancePage = () => {
                   {currentBatch.enrolled_students.map((st) => {
                     const isSelected = selectedStudentForTrack?.student_id === st.student_id;
                     const att = st.attendance_stats || { percentage: 100, present: 0, total: 0 };
-                    const attVariant = att.percentage >= 85 ? 'success' : att.percentage >= 70 ? 'warning' : 'danger';
+                    const attVariant =
+                      att.percentage >= 85 ? 'success' : att.percentage >= 70 ? 'warning' : 'danger';
 
                     return (
                       <button
                         key={st.id}
                         type="button"
-                        onClick={() => handleSelectStudentForTrack(st)}
+                        onClick={() => loadStudentRecords(st, selectedBatchId)}
                         className={`w-full text-left p-3 rounded-xl border transition flex items-center justify-between ${
                           isSelected
                             ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20'
@@ -420,7 +582,7 @@ export const AttendancePage = () => {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-4">
                     <div>
                       <h3 className="text-base font-bold text-gray-900">
                         {selectedStudentForTrack.student_name}
@@ -450,7 +612,7 @@ export const AttendancePage = () => {
                   {trackingStats && (
                     <div className="grid grid-cols-4 gap-3 text-center">
                       <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase">Conducted</p>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">Total Classes</p>
                         <p className="text-base font-bold text-gray-900 mt-0.5">{trackingStats.total_sessions}</p>
                       </div>
                       <div className="p-3 bg-green-50 rounded-xl border border-green-100">
@@ -470,27 +632,31 @@ export const AttendancePage = () => {
                     </div>
                   )}
 
-                  {/* Attendance Log Table */}
+                  {/* Attendance Log Table with Status Change Action */}
                   <div className="border border-gray-100 rounded-xl overflow-hidden mt-4">
-                    <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 font-bold text-xs text-gray-700 uppercase">
-                      Class Attendance History Log
+                    <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 font-bold text-xs text-gray-700 uppercase flex items-center justify-between">
+                      <span>Class Attendance History Log</span>
+                      <span className="text-[11px] font-normal text-gray-500">
+                        {trackingRecords.length} sessions logged
+                      </span>
                     </div>
 
                     {loadingTrackRecords ? (
                       <div className="py-10 text-center text-xs text-gray-400">Loading session history...</div>
                     ) : trackingRecords.length === 0 ? (
                       <div className="py-10 text-center text-xs text-gray-400">
-                        No session attendance records found for this student.
+                        No session attendance records found for this student in this batch.
                       </div>
                     ) : (
-                      <div className="max-h-72 overflow-y-auto">
+                      <div className="max-h-80 overflow-y-auto">
                         <table className="w-full text-left text-xs">
                           <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 font-medium">
                             <tr>
                               <th className="px-3.5 py-2">Date & Time</th>
                               <th className="px-3.5 py-2">Topic Covered</th>
                               <th className="px-3.5 py-2">Status</th>
-                              <th className="px-3.5 py-2">Tutor Remarks</th>
+                              <th className="px-3.5 py-2">Remarks / Audit Note</th>
+                              <th className="px-3.5 py-2 text-right">Action</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -498,7 +664,9 @@ export const AttendancePage = () => {
                               <tr key={rec.id} className="hover:bg-gray-50/50 transition">
                                 <td className="px-3.5 py-2.5 whitespace-nowrap font-semibold text-gray-900">
                                   {rec.session_date}
-                                  <span className="block text-[10px] font-normal text-gray-400">{rec.session_time}</span>
+                                  <span className="block text-[10px] font-normal text-gray-400">
+                                    {rec.session_time}
+                                  </span>
                                 </td>
                                 <td className="px-3.5 py-2.5 text-gray-600 max-w-xs truncate">
                                   {rec.topic_covered || '—'}
@@ -522,6 +690,17 @@ export const AttendancePage = () => {
                                 <td className="px-3.5 py-2.5 text-gray-500 italic max-w-xs truncate">
                                   {rec.remarks || '—'}
                                 </td>
+                                <td className="px-3.5 py-2.5 whitespace-nowrap text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditStatus(rec)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg shadow-2xs transition"
+                                    title="Check and change attendance status accordingly with user help"
+                                  >
+                                    <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>{isStudent ? 'Change with Help' : 'Change Status'}</span>
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -535,6 +714,123 @@ export const AttendancePage = () => {
           </div>
         </div>
       )}
+
+      {/* Modal: Change Attendance Status with User Assistance */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title="Change Attendance Status & Record"
+        maxWidth="max-w-md"
+      >
+        {editingRecord && (
+          <form onSubmit={handleSaveStatusChange} className="space-y-4">
+            <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 text-xs text-blue-900">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900">{selectedStudentForTrack?.student_name}</span>
+                <span className="font-semibold text-blue-700">{editingRecord.session_date}</span>
+              </div>
+              <p className="text-[11px] text-gray-600 mt-1">
+                Topic: <span className="font-medium">{editingRecord.topic_covered || 'General Session'}</span>
+              </p>
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="text-gray-500 text-[11px]">Current Status:</span>
+                <Badge
+                  variant={
+                    editingRecord.status === 'PRESENT'
+                      ? 'success'
+                      : editingRecord.status === 'ABSENT'
+                      ? 'danger'
+                      : editingRecord.status === 'LATE'
+                      ? 'warning'
+                      : 'primary'
+                  }
+                  size="xs"
+                >
+                  {editingRecord.status}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Select New Status */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
+                Select New Status
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { val: 'PRESENT', label: 'Present', color: 'border-green-500 bg-green-50 text-green-700' },
+                  { val: 'ABSENT', label: 'Absent', color: 'border-red-500 bg-red-50 text-red-700' },
+                  { val: 'LATE', label: 'Late', color: 'border-amber-500 bg-amber-50 text-amber-700' },
+                  { val: 'EXCUSED', label: 'Excused', color: 'border-blue-500 bg-blue-50 text-blue-700' },
+                ].map((opt) => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => setNewStatus(opt.val)}
+                    className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                      newStatus === opt.val
+                        ? `${opt.color} ring-2 ring-blue-400/30`
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {newStatus === opt.val && <CheckCircle2 className="w-4 h-4" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* User / Tutor Assisting */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                User / Tutor Assisting with Change
+              </label>
+              <input
+                type="text"
+                required
+                value={assistedBy}
+                onChange={(e) => setAssistedBy(e.target.value)}
+                placeholder="e.g. Tutor Ramesh / Admin User"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="text-[10px] text-gray-400 mt-1">
+                Records the authority / instructor who assisted and verified this status adjustment.
+              </p>
+            </div>
+
+            {/* Reason / Correction Remarks */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                Reason / Note for Status Change
+              </label>
+              <textarea
+                rows={2}
+                value={statusRemarks}
+                onChange={(e) => setStatusRemarks(e.target.value)}
+                placeholder="e.g. Attended makeup session online / Doctor leave slip verified"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={updatingStatus}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-50"
+              >
+                {updatingStatus ? 'Saving Change...' : 'Confirm Status Change'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 };

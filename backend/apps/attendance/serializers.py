@@ -4,8 +4,8 @@ from apps.accounts.serializers import StudentProfileSerializer
 
 class AttendanceRecordSerializer(serializers.ModelSerializer):
     student = StudentProfileSerializer(read_only=True)
-    student_id = serializers.IntegerField(write_only=True)
-    session_id = serializers.IntegerField(write_only=True)
+    student_id = serializers.IntegerField(write_only=True, required=False)
+    session_id = serializers.IntegerField(write_only=True, required=False)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     session_date = serializers.DateField(source='session.session_date', read_only=True)
     session_time = serializers.SerializerMethodField()

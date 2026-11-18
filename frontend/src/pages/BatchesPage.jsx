@@ -3,10 +3,10 @@ import { useAuth } from '../context/AuthContext';
 import { batchApi, userApi, attendanceApi } from '../api';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
-import { Users, Plus, UserPlus, BookOpen, Calendar, CheckCircle, Clock, X, AlertCircle } from 'lucide-react';
+import { Users, Plus, UserPlus, BookOpen, Calendar, CheckCircle, Clock, X, AlertCircle, UserCheck, CheckCircle2 } from 'lucide-react';
 
 export const BatchesPage = () => {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin, isTutor, isStudent, isParent } = useAuth();
   const [batches, setBatches] = useState([]);
   const [tutors, setTutors] = useState([]);
   const [students, setStudents] = useState([]);
@@ -24,6 +24,15 @@ export const BatchesPage = () => {
   const [trackingRecords, setTrackingRecords] = useState([]);
   const [trackingStats, setTrackingStats] = useState(null);
   const [loadingTracking, setLoadingTracking] = useState(false);
+
+  // Attendance status editing state
+  const [isEditStatusOpen, setIsEditStatusOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [editStatusValue, setEditStatusValue] = useState('PRESENT');
+  const [editRemarksValue, setEditRemarksValue] = useState('');
+  const [editAssistedBy, setEditAssistedBy] = useState('');
+  const [savingStatusChange, setSavingStatusChange] = useState(false);
+  const [statusChangeSuccess, setStatusChangeSuccess] = useState('');
 
   // New batch form state
   const [newBatch, setNewBatch] = useState({
@@ -142,6 +151,57 @@ export const BatchesPage = () => {
       console.error('Error fetching attendance tracking:', err);
     } finally {
       setLoadingTracking(false);
+    }
+  };
+
+  const handleOpenEditStatus = (rec) => {
+    setEditingRecord(rec);
+    setEditStatusValue(rec.status || 'PRESENT');
+    setEditRemarksValue(rec.remarks || '');
+    const defaultHelper =
+      selectedTrackBatch?.tutor?.user?.full_name ||
+      user?.full_name ||
+      'Tutor Ramesh (Lead Instructor)';
+    setEditAssistedBy(defaultHelper);
+    setIsEditStatusOpen(true);
+  };
+
+  const handleSaveStatusChange = async (e) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+    setSavingStatusChange(true);
+    setStatusChangeSuccess('');
+    try {
+      const res = await attendanceApi.changeStatus(editingRecord.id, {
+        status: editStatusValue,
+        remarks: editRemarksValue,
+        assisted_by: editAssistedBy,
+      });
+      const updated = res.data;
+
+      // Update in local records list
+      setTrackingRecords((prev) =>
+        prev.map((r) => (r.id === updated.id ? updated : r))
+      );
+
+      // Refresh stats
+      if (selectedTrackStudent && selectedTrackBatch) {
+        const statsRes = await attendanceApi.getStudentStats(
+          selectedTrackStudent.student_id,
+          selectedTrackBatch.id
+        );
+        setTrackingStats(statsRes.data);
+      }
+
+      // Refresh batch cards so attendance percentages update
+      loadData();
+
+      setStatusChangeSuccess(`Attendance on ${updated.session_date} successfully updated to ${updated.status}!`);
+      setIsEditStatusOpen(false);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update attendance status.');
+    } finally {
+      setSavingStatusChange(false);
     }
   };
 
@@ -567,6 +627,24 @@ export const BatchesPage = () => {
           </div>
 
           {/* Quick Stats Grid */}
+          {/* Success Notification after status change */}
+          {statusChangeSuccess && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-xs font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                <span>{statusChangeSuccess}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusChangeSuccess('')}
+                className="text-[10px] text-green-700 underline font-normal"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Metric Summary Counters */}
           {trackingStats && (
             <div className="grid grid-cols-4 gap-2 text-center">
               <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
@@ -611,6 +689,7 @@ export const BatchesPage = () => {
                       <th className="px-3.5 py-2">Topic Covered</th>
                       <th className="px-3.5 py-2">Status</th>
                       <th className="px-3.5 py-2">Remarks</th>
+                      <th className="px-3.5 py-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -642,6 +721,17 @@ export const BatchesPage = () => {
                         <td className="px-3.5 py-2.5 text-gray-500 italic max-w-xs truncate">
                           {rec.remarks || '—'}
                         </td>
+                        <td className="px-3.5 py-2.5 whitespace-nowrap text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditStatus(rec)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg shadow-2xs transition"
+                            title="Change attendance status accordingly with user help"
+                          >
+                            <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                            <span>{isStudent ? 'Change with Help' : 'Change Status'}</span>
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -660,6 +750,123 @@ export const BatchesPage = () => {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal: Change Attendance Status with User Assistance */}
+      <Modal
+        isOpen={isEditStatusOpen}
+        onClose={() => setIsEditStatusOpen(false)}
+        title="Change Attendance Status & Record"
+        maxWidth="max-w-md"
+      >
+        {editingRecord && (
+          <form onSubmit={handleSaveStatusChange} className="space-y-4">
+            <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 text-xs text-blue-900">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900">{selectedTrackStudent?.student_name}</span>
+                <span className="font-semibold text-blue-700">{editingRecord.session_date}</span>
+              </div>
+              <p className="text-[11px] text-gray-600 mt-1">
+                Batch: <span className="font-medium">{selectedTrackBatch?.name}</span>
+              </p>
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="text-gray-500 text-[11px]">Current Status:</span>
+                <Badge
+                  variant={
+                    editingRecord.status === 'PRESENT'
+                      ? 'success'
+                      : editingRecord.status === 'ABSENT'
+                      ? 'danger'
+                      : editingRecord.status === 'LATE'
+                      ? 'warning'
+                      : 'primary'
+                  }
+                  size="xs"
+                >
+                  {editingRecord.status}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Select New Status */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
+                Select New Status
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { val: 'PRESENT', label: 'Present', color: 'border-green-500 bg-green-50 text-green-700' },
+                  { val: 'ABSENT', label: 'Absent', color: 'border-red-500 bg-red-50 text-red-700' },
+                  { val: 'LATE', label: 'Late', color: 'border-amber-500 bg-amber-50 text-amber-700' },
+                  { val: 'EXCUSED', label: 'Excused', color: 'border-blue-500 bg-blue-50 text-blue-700' },
+                ].map((opt) => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => setEditStatusValue(opt.val)}
+                    className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
+                      editStatusValue === opt.val
+                        ? `${opt.color} ring-2 ring-blue-400/30`
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {editStatusValue === opt.val && <CheckCircle2 className="w-4 h-4" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* User / Tutor Assisting */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                User / Tutor Assisting with Change
+              </label>
+              <input
+                type="text"
+                required
+                value={editAssistedBy}
+                onChange={(e) => setEditAssistedBy(e.target.value)}
+                placeholder="e.g. Tutor Ramesh / Admin User"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="text-[10px] text-gray-400 mt-1">
+                Records the authority / instructor who assisted and verified this status adjustment.
+              </p>
+            </div>
+
+            {/* Reason / Correction Remarks */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                Reason / Note for Status Change
+              </label>
+              <textarea
+                rows={2}
+                value={editRemarksValue}
+                onChange={(e) => setEditRemarksValue(e.target.value)}
+                placeholder="e.g. Attended makeup session online / Doctor leave slip verified"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsEditStatusOpen(false)}
+                className="px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingStatusChange}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-50"
+              >
+                {savingStatusChange ? 'Saving Change...' : 'Confirm Status Change'}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

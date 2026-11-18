@@ -31,6 +31,8 @@ export const attendanceApi = {
   getSessionSheet: (sessionId) => client.get('/attendance/session_sheet/', { params: { session_id: sessionId } }),
   submitBulk: (data) => client.post('/attendance/bulk_mark/', data),
   getStudentStats: (studentId, batchId) => client.get('/attendance/student_stats/', { params: { student_id: studentId, batch_id: batchId } }),
+  updateRecord: (recordId, data) => client.patch(`/attendance/${recordId}/`, data),
+  changeStatus: (recordId, data) => client.post(`/attendance/${recordId}/change_status/`, data),
 };
 
 export const feeApi = {
