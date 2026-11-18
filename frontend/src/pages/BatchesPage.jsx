@@ -31,7 +31,12 @@ export const BatchesPage = () => {
   });
 
   // Enroll form state
-  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [enrollForm, setEnrollForm] = useState({
+    student_name: '',
+    student_id: '',
+    grade_level: '',
+    phone_number: '',
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -82,15 +87,35 @@ export const BatchesPage = () => {
 
   const handleEnrollStudent = async (e) => {
     e.preventDefault();
-    if (!selectedBatch || !selectedStudentId) return;
+    if (!selectedBatch || !enrollForm.student_name.trim()) {
+      alert('Please enter a student name to enroll.');
+      return;
+    }
     try {
-      await batchApi.enrollStudent(selectedBatch.id, selectedStudentId);
+      const res = await batchApi.enrollStudent(selectedBatch.id, {
+        student_name: enrollForm.student_name.trim(),
+        student_id: enrollForm.student_id ? parseInt(enrollForm.student_id) : undefined,
+        grade_level: enrollForm.grade_level.trim(),
+        phone_number: enrollForm.phone_number.trim(),
+      });
+      alert(res.data?.message || 'Student enrolled successfully!');
       setIsEnrollOpen(false);
-      setSelectedStudentId('');
+      setEnrollForm({ student_name: '', student_id: '', grade_level: '', phone_number: '' });
       loadData();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to enroll student.');
     }
+  };
+
+  const handleOpenEnroll = (batch) => {
+    setSelectedBatch(batch);
+    setEnrollForm({
+      student_name: '',
+      student_id: '',
+      grade_level: batch.grade_level || 'Grade 10',
+      phone_number: '',
+    });
+    setIsEnrollOpen(true);
   };
 
   return (
@@ -166,10 +191,7 @@ export const BatchesPage = () => {
                 {isAdmin && (
                   <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-end gap-2">
                     <button
-                      onClick={() => {
-                        setSelectedBatch(batch);
-                        setIsEnrollOpen(true);
-                      }}
+                      onClick={() => handleOpenEnroll(batch)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs font-semibold text-gray-700 rounded-lg transition"
                     >
                       <UserPlus className="w-3.5 h-3.5" />
@@ -314,20 +336,100 @@ export const BatchesPage = () => {
       >
         <form onSubmit={handleEnrollStudent} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Select Student</label>
-            <select
+            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
+              Student Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
               required
-              value={selectedStudentId}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-            >
-              <option value="">Select Student</option>
+              list="registered-students-list"
+              value={enrollForm.student_name}
+              onChange={(e) => {
+                const val = e.target.value;
+                const matched = students.find(
+                  (s) => (s.user?.full_name || s.user?.username).toLowerCase() === val.toLowerCase()
+                );
+                setEnrollForm((prev) => ({
+                  ...prev,
+                  student_name: val,
+                  student_id: matched ? matched.id : '',
+                  grade_level: matched?.grade_level || prev.grade_level || selectedBatch?.grade_level || '',
+                }));
+              }}
+              placeholder="Type student name (e.g. Rahul Sharma)"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <datalist id="registered-students-list">
               {students.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.user?.full_name || s.user?.username} ({s.grade_level})
+                <option key={s.id} value={s.user?.full_name || s.user?.username}>
+                  Grade: {s.grade_level}
                 </option>
               ))}
-            </select>
+            </datalist>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Enter any new student's name, or choose from registered students.
+            </p>
+          </div>
+
+          {/* Quick select chip pills */}
+          {students.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Quick Select Registered Student:
+              </p>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-gray-50 rounded-lg border border-gray-100">
+                {students.map((s) => {
+                  const sName = s.user?.full_name || s.user?.username;
+                  const isSelected =
+                    enrollForm.student_id === s.id ||
+                    enrollForm.student_name.toLowerCase() === sName.toLowerCase();
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() =>
+                        setEnrollForm({
+                          student_name: sName,
+                          student_id: s.id,
+                          grade_level: s.grade_level,
+                          phone_number: s.user?.phone_number || '',
+                        })
+                      }
+                      className={`px-2.5 py-1 rounded text-xs transition border ${
+                        isSelected
+                          ? 'bg-blue-600 text-white border-blue-600 font-semibold'
+                          : 'bg-white text-gray-700 hover:bg-gray-100 border-gray-200'
+                      }`}
+                    >
+                      {sName} ({s.grade_level})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Grade / Level</label>
+              <input
+                type="text"
+                value={enrollForm.grade_level}
+                onChange={(e) => setEnrollForm({ ...enrollForm, grade_level: e.target.value })}
+                placeholder="e.g. Grade 10"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Contact Phone (Optional)</label>
+              <input
+                type="text"
+                value={enrollForm.phone_number}
+                onChange={(e) => setEnrollForm({ ...enrollForm, phone_number: e.target.value })}
+                placeholder="e.g. +91-9876543210"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-3">
@@ -342,7 +444,7 @@ export const BatchesPage = () => {
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 shadow-sm"
             >
-              Confirm Enrollment
+              Enroll Student
             </button>
           </div>
         </form>

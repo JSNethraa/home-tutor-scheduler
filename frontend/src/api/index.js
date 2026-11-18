@@ -12,7 +12,8 @@ export const batchApi = {
   getById: (id) => client.get(`/batches/${id}/`),
   create: (data) => client.post('/batches/', data),
   update: (id, data) => client.put(`/batches/${id}/`, data),
-  enrollStudent: (batchId, studentId) => client.post(`/batches/${batchId}/enroll/`, { student_id: studentId }),
+  enrollStudent: (batchId, payload) =>
+    client.post(`/batches/${batchId}/enroll/`, typeof payload === 'object' ? payload : { student_id: payload }),
   unenrollStudent: (batchId, studentId) => client.post(`/batches/${batchId}/unenroll/`, { student_id: studentId }),
 };
 
