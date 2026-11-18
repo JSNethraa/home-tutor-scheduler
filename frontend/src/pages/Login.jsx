@@ -19,7 +19,7 @@ export const Login = () => {
       await login(username, password);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid username or password.');
+      setError(err.message || 'Invalid username or password.');
     } finally {
       setLoading(false);
     }

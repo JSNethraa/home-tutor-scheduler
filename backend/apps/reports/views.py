@@ -88,19 +88,32 @@ class ProgressReportViewSet(viewsets.ModelViewSet):
         """
         student_id = request.data.get('student_id')
         batch_id = request.data.get('batch_id')
+        period_start = request.data.get('period_start')
+        period_end = request.data.get('period_end')
 
         if not student_id or not batch_id:
             return Response({'error': 'student_id and batch_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Calculate attendance
+        # Calculate attendance (filtered by period dates if provided)
         att_records = AttendanceRecord.objects.filter(student_id=student_id, session__batch_id=batch_id)
+        if period_start:
+            att_records = att_records.filter(session__session_date__gte=period_start)
+        if period_end:
+            att_records = att_records.filter(session__session_date__lte=period_end)
         total_sessions = att_records.count()
         present = att_records.filter(status='PRESENT').count()
+        absent = att_records.filter(status='ABSENT').count()
         late = att_records.filter(status='LATE').count()
-        att_rate = round(((present + (late * 0.5)) / total_sessions * 100), 1) if total_sessions > 0 else 100.0
+        # Exclude Excused from denominator; Late counts as full attendance
+        effective_total = present + absent + late
+        att_rate = round(((present + late) / effective_total * 100), 1) if effective_total > 0 else 100.0
 
-        # Calculate test results
+        # Calculate test results (filtered by period dates if provided)
         results = AssessmentResult.objects.filter(student_id=student_id, assessment__batch_id=batch_id)
+        if period_start:
+            results = results.filter(assessment__test_date__gte=period_start)
+        if period_end:
+            results = results.filter(assessment__test_date__lte=period_end)
         if results.exists():
             percentages = [res.percentage for res in results]
             avg_score = round(sum(percentages) / len(percentages), 1)

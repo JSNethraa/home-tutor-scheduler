@@ -1,50 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { batchApi, scheduleApi, feeApi, attendanceApi } from '../api';
 import { StatCard } from '../components/StatCard';
 import { Badge } from '../components/Badge';
 import { Users, Calendar, CreditCard, CheckCircle2, Clock, AlertTriangle, ArrowUpRight, CheckSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+// ── Mock data ────────────────────────────────────────────────────────────────
+const MOCK_SESSIONS = [
+  { id: 1, batch: { name: 'Physics Batch A' }, session_date: '2026-11-19', start_time: '09:00', end_time: '10:30', room_or_link: 'Room 101', status: 'SCHEDULED', topic_covered: 'Laws of Motion' },
+  { id: 2, batch: { name: 'Maths 1-on-1 (Rohit)' }, session_date: '2026-11-19', start_time: '11:00', end_time: '12:00', room_or_link: 'Home Visit', status: 'SCHEDULED', topic_covered: 'Quadratic Equations' },
+  { id: 3, batch: { name: 'Chemistry Group' }, session_date: '2026-11-20', start_time: '14:00', end_time: '15:30', room_or_link: 'Room 203', status: 'SCHEDULED', topic_covered: 'Periodic Table' },
+  { id: 4, batch: { name: 'Biology Batch B' }, session_date: '2026-11-21', start_time: '10:00', end_time: '11:30', room_or_link: 'Room 102', status: 'COMPLETED', topic_covered: 'Cell Division' },
+];
+
+const MOCK_BATCHES = [
+  { id: 1, name: 'Physics Batch A',      subject: 'Physics',   monthly_fee: 2500, batch_type: 'COACHING_GROUP' },
+  { id: 2, name: 'Maths 1-on-1 (Rohit)',subject: 'Maths',     monthly_fee: 4000, batch_type: 'HOME_TUTOR_1ON1' },
+  { id: 3, name: 'Chemistry Group',      subject: 'Chemistry', monthly_fee: 2200, batch_type: 'COACHING_GROUP' },
+  { id: 4, name: 'Biology Batch B',      subject: 'Biology',   monthly_fee: 2000, batch_type: 'COACHING_GROUP' },
+];
+
+const FEE_SUMMARY = { total_collected: 48000, total_pending: 12000, unpaid_invoices: 4, partially_paid_invoices: 2 };
+
 export const Dashboard = () => {
   const { user, isAdmin, isTutor, isParent, isStudent } = useAuth();
-  const [batches, setBatches] = useState([]);
-  const [sessions, setSessions] = useState([]);
-  const [feeSummary, setFeeSummary] = useState(null);
-  const [studentStats, setStudentStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      setLoading(true);
-      try {
-        const [batchRes, sessionRes] = await Promise.all([
-          batchApi.getMyBatches(),
-          scheduleApi.getSessions({ start_date: new Date().toISOString().split('T')[0] }),
-        ]);
-        setBatches(batchRes.data || []);
-        setSessions(
-          Array.isArray(sessionRes.data)
-            ? sessionRes.data
-            : sessionRes.data?.results || []
-        );
-
-        if (isAdmin) {
-          const feeRes = await feeApi.getSummary();
-          setFeeSummary(feeRes.data);
-        } else if (isStudent) {
-          const statsRes = await attendanceApi.getStudentStats();
-          setStudentStats(statsRes.data);
-        }
-      } catch (err) {
-        console.error('Error fetching dashboard metrics:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, [user]);
 
   return (
     <div className="space-y-8">
@@ -83,65 +62,28 @@ export const Dashboard = () => {
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Active Batches"
-          value={batches.length}
-          icon={Users}
-          change="Group & 1-on-1"
-          color="blue"
-        />
+        <StatCard title="Active Batches"     value={MOCK_BATCHES.length} icon={Users}        change="Group & 1-on-1"           color="blue"   />
+        <StatCard title="Upcoming Sessions"  value={MOCK_SESSIONS.length} icon={Calendar}    change="Next 7 Days"              color="purple" />
 
-        <StatCard
-          title="Upcoming Sessions"
-          value={sessions.length}
-          icon={Calendar}
-          change="Next 7 Days"
-          color="purple"
-        />
-
-        {isAdmin && feeSummary && (
+        {isAdmin && (
           <>
-            <StatCard
-              title="Collected Fees"
-              value={`Rs. ${feeSummary.total_collected.toLocaleString()}`}
-              icon={CreditCard}
-              change={`Pending: Rs. ${feeSummary.total_pending.toLocaleString()}`}
-              color="green"
-            />
-            <StatCard
-              title="Unpaid Invoices"
-              value={feeSummary.unpaid_invoices}
-              icon={AlertTriangle}
-              change={`${feeSummary.partially_paid_invoices} partially paid`}
-              color="amber"
-            />
+            <StatCard title="Collected Fees"   value={`Rs. ${FEE_SUMMARY.total_collected.toLocaleString()}`} icon={CreditCard}  change={`Pending: Rs. ${FEE_SUMMARY.total_pending.toLocaleString()}`} color="green" />
+            <StatCard title="Unpaid Invoices"  value={FEE_SUMMARY.unpaid_invoices}                           icon={AlertTriangle} change={`${FEE_SUMMARY.partially_paid_invoices} partially paid`}      color="amber" />
           </>
         )}
 
         {(isStudent || isParent) && (
-          <StatCard
-            title="Attendance Rate"
-            value={studentStats ? `${studentStats.attendance_percentage}%` : '96%'}
-            icon={CheckCircle2}
-            change="Across active subjects"
-            color="green"
-          />
+          <StatCard title="Attendance Rate" value="96%" icon={CheckCircle2} change="Across active subjects" color="green" />
         )}
 
         {isTutor && (
-          <StatCard
-            title="Conducted Hours"
-            value="18.5 hrs"
-            icon={Clock}
-            change="This calendar month"
-            color="amber"
-          />
+          <StatCard title="Conducted Hours" value="18.5 hrs" icon={Clock} change="This calendar month" color="amber" />
         )}
       </div>
 
-      {/* Two Column Section: Upcoming Schedule & Enrolled Batches */}
+      {/* Two Column Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Next Class Sessions */}
+        {/* Upcoming Sessions */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -154,46 +96,34 @@ export const Dashboard = () => {
             </Link>
           </div>
 
-          {loading ? (
-            <div className="py-12 text-center text-gray-400 text-sm">Loading sessions...</div>
-          ) : sessions.length === 0 ? (
-            <div className="py-12 text-center border-2 border-dashed border-gray-100 rounded-xl">
-              <Calendar className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm font-medium text-gray-500">No upcoming classes scheduled</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {sessions.slice(0, 5).map((session) => (
-                <div key={session.id} className="py-3.5 flex items-center justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 mt-0.5">
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">{session.batch?.name}</h3>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {session.session_date} • {session.start_time} - {session.end_time} • {session.room_or_link || 'Room 101'}
-                      </p>
-                      {session.topic_covered && (
-                        <p className="text-xs text-blue-700 mt-1 font-medium bg-blue-50/70 inline-block px-2 py-0.5 rounded">
-                          Topic: {session.topic_covered}
-                        </p>
-                      )}
-                    </div>
+          <div className="divide-y divide-gray-100">
+            {MOCK_SESSIONS.slice(0, 5).map((session) => (
+              <div key={session.id} className="py-3.5 flex items-center justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 mt-0.5">
+                    <Clock className="w-4 h-4" />
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <Badge variant={session.status === 'COMPLETED' ? 'success' : 'primary'}>
-                      {session.status}
-                    </Badge>
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">{session.batch?.name}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {session.session_date} • {session.start_time} - {session.end_time} • {session.room_or_link}
+                    </p>
+                    {session.topic_covered && (
+                      <p className="text-xs text-blue-700 mt-1 font-medium bg-blue-50/70 inline-block px-2 py-0.5 rounded">
+                        Topic: {session.topic_covered}
+                      </p>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+                <Badge variant={session.status === 'COMPLETED' ? 'success' : 'primary'}>
+                  {session.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Active Batches / Courses */}
+        {/* Active Batches */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -207,7 +137,7 @@ export const Dashboard = () => {
           </div>
 
           <div className="space-y-3">
-            {batches.slice(0, 4).map((b) => (
+            {MOCK_BATCHES.slice(0, 4).map((b) => (
               <div key={b.id} className="p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-gray-900 truncate">{b.name}</h4>

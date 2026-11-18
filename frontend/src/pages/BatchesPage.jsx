@@ -1,872 +1,300 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { batchApi, userApi, attendanceApi } from '../api';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
-import { Users, Plus, UserPlus, BookOpen, Calendar, CheckCircle, Clock, X, AlertCircle, UserCheck, CheckCircle2 } from 'lucide-react';
+import { Users, Plus, UserPlus, BookOpen, CheckCircle2, X, UserCheck } from 'lucide-react';
+
+// ── Mock data ─────────────────────────────────────────────────────────────────
+const MOCK_TUTORS = [
+  { id: 2, name: 'Ramesh Kumar' },
+  { id: 7, name: 'Sunita Mehra' },
+];
+
+const MOCK_STUDENTS_POOL = [
+  { id: 4, name: 'Rohit Sharma',  grade_level: 'Grade 10' },
+  { id: 5, name: 'Priya Patel',   grade_level: 'Grade 10' },
+  { id: 6, name: 'Arjun Verma',   grade_level: 'Grade 11' },
+  { id: 8, name: 'Anjali Singh',  grade_level: 'Grade 9'  },
+  { id: 9, name: 'Karan Mehta',   grade_level: 'Grade 11' },
+];
+
+const INIT_BATCHES = [
+  {
+    id: 1, name: 'Physics Batch A', batch_type: 'COACHING_GROUP', subject: 'Physics',
+    grade_level: 'Grade 10', monthly_fee: 2500, start_date: '2026-09-01',
+    tutor: { user: { full_name: 'Ramesh Kumar' } },
+    enrolled_students: [
+      { id: 1, student_id: 4, student_name: 'Rohit Sharma',  grade_level: 'Grade 10', attendance_stats: { percentage: 96, present: 24, total: 25 } },
+      { id: 2, student_id: 5, student_name: 'Priya Patel',   grade_level: 'Grade 10', attendance_stats: { percentage: 90, present: 18, total: 20 } },
+    ],
+    enrolled_count: 2, description: 'Group coaching for Physics, covering CBSE syllabus.',
+  },
+  {
+    id: 2, name: 'Maths 1-on-1 (Rohit)', batch_type: 'HOME_TUTOR_1ON1', subject: 'Maths',
+    grade_level: 'Grade 10', monthly_fee: 4000, start_date: '2026-09-15',
+    tutor: { user: { full_name: 'Ramesh Kumar' } },
+    enrolled_students: [
+      { id: 3, student_id: 4, student_name: 'Rohit Sharma',  grade_level: 'Grade 10', attendance_stats: { percentage: 100, present: 12, total: 12 } },
+    ],
+    enrolled_count: 1, description: 'Private home tutoring for Maths.',
+  },
+  {
+    id: 3, name: 'Chemistry Group', batch_type: 'COACHING_GROUP', subject: 'Chemistry',
+    grade_level: 'Grade 11', monthly_fee: 2200, start_date: '2026-09-01',
+    tutor: { user: { full_name: 'Sunita Mehra' } },
+    enrolled_students: [
+      { id: 4, student_id: 6, student_name: 'Arjun Verma',  grade_level: 'Grade 11', attendance_stats: { percentage: 82, present: 14, total: 17 } },
+      { id: 5, student_id: 8, student_name: 'Anjali Singh', grade_level: 'Grade 9',  attendance_stats: { percentage: 94, present: 16, total: 17 } },
+    ],
+    enrolled_count: 2, description: 'Chemistry coaching for Class 11 students.',
+  },
+];
 
 export const BatchesPage = () => {
-  const { user, isAdmin, isTutor, isStudent, isParent } = useAuth();
-  const [batches, setBatches] = useState([]);
-  const [tutors, setTutors] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  // Modals state
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isEnrollOpen, setIsEnrollOpen] = useState(false);
+  const { isAdmin, isTutor } = useAuth();
+  const [batches, setBatches]       = useState(INIT_BATCHES);
+  const [isCreateOpen, setIsCreateOpen]   = useState(false);
+  const [isEnrollOpen, setIsEnrollOpen]   = useState(false);
   const [selectedBatch, setSelectedBatch] = useState(null);
 
-  // Attendance tracking modal state
-  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
-  const [selectedTrackStudent, setSelectedTrackStudent] = useState(null);
-  const [selectedTrackBatch, setSelectedTrackBatch] = useState(null);
-  const [trackingRecords, setTrackingRecords] = useState([]);
-  const [trackingStats, setTrackingStats] = useState(null);
-  const [loadingTracking, setLoadingTracking] = useState(false);
-
-  // Attendance status editing state
-  const [isEditStatusOpen, setIsEditStatusOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState(null);
-  const [editStatusValue, setEditStatusValue] = useState('PRESENT');
-  const [editRemarksValue, setEditRemarksValue] = useState('');
-  const [editAssistedBy, setEditAssistedBy] = useState('');
-  const [savingStatusChange, setSavingStatusChange] = useState(false);
-  const [statusChangeSuccess, setStatusChangeSuccess] = useState('');
-
-  // New batch form state
+  // New batch form
   const [newBatch, setNewBatch] = useState({
-    name: '',
-    batch_type: 'COACHING_GROUP',
-    subject: '',
-    grade_level: 'Grade 10',
-    tutor_id: '',
-    capacity: 15,
-    monthly_fee: 2500,
-    start_date: new Date().toISOString().split('T')[0],
-    description: '',
+    name: '', batch_type: 'COACHING_GROUP', subject: '', grade_level: 'Grade 10',
+    tutor_id: '2', capacity: 15, monthly_fee: 2500,
+    start_date: new Date().toISOString().split('T')[0], description: '',
   });
 
-  // Enroll form state
-  const [enrollForm, setEnrollForm] = useState({
-    student_name: '',
-    student_id: '',
-    grade_level: '',
-    phone_number: '',
-  });
+  // Enroll form
+  const [enrollForm, setEnrollForm] = useState({ student_id: '', student_name: '', grade_level: 'Grade 10' });
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const res = await batchApi.getAll();
-      setBatches(res.data.results || res.data || []);
-
-      if (isAdmin) {
-        const [tutorRes, studentRes] = await Promise.all([
-          userApi.getTutors(),
-          userApi.getStudents(),
-        ]);
-        setTutors(tutorRes.data.results || tutorRes.data || []);
-        setStudents(studentRes.data.results || studentRes.data || []);
-      }
-    } catch (err) {
-      console.error('Error fetching batches:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const handleCreateBatch = async (e) => {
+  const handleCreateBatch = (e) => {
     e.preventDefault();
-    try {
-      await batchApi.create(newBatch);
-      setIsCreateOpen(false);
-      setNewBatch({
-        name: '',
-        batch_type: 'COACHING_GROUP',
-        subject: '',
-        grade_level: 'Grade 10',
-        tutor_id: '',
-        capacity: 15,
-        monthly_fee: 2500,
-        start_date: new Date().toISOString().split('T')[0],
-        description: '',
-      });
-      loadData();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to create batch.');
-    }
+    const tutor = MOCK_TUTORS.find(t => t.id === parseInt(newBatch.tutor_id));
+    setBatches(prev => [{
+      id: Date.now(),
+      ...newBatch,
+      monthly_fee: parseFloat(newBatch.monthly_fee),
+      capacity: parseInt(newBatch.capacity),
+      tutor: { user: { full_name: tutor?.name } },
+      enrolled_students: [], enrolled_count: 0,
+    }, ...prev]);
+    setIsCreateOpen(false);
+    setNewBatch({ name: '', batch_type: 'COACHING_GROUP', subject: '', grade_level: 'Grade 10', tutor_id: '2', capacity: 15, monthly_fee: 2500, start_date: new Date().toISOString().split('T')[0], description: '' });
   };
 
-  const handleEnrollStudent = async (e) => {
+  const handleEnroll = (e) => {
     e.preventDefault();
-    if (!selectedBatch || !enrollForm.student_name.trim()) {
-      alert('Please enter a student name to enroll.');
-      return;
-    }
-    try {
-      const res = await batchApi.enrollStudent(selectedBatch.id, {
-        student_name: enrollForm.student_name.trim(),
-        student_id: enrollForm.student_id ? parseInt(enrollForm.student_id) : undefined,
-        grade_level: enrollForm.grade_level.trim(),
-        phone_number: enrollForm.phone_number.trim(),
-      });
-      alert(res.data?.message || 'Student enrolled successfully!');
-      setIsEnrollOpen(false);
-      setEnrollForm({ student_name: '', student_id: '', grade_level: '', phone_number: '' });
-      loadData();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Failed to enroll student.');
-    }
+    if (!selectedBatch || !enrollForm.student_name.trim()) return;
+    const newStudent = {
+      id: Date.now(),
+      student_id: Date.now(),
+      student_name: enrollForm.student_name.trim(),
+      grade_level: enrollForm.grade_level,
+      attendance_stats: { percentage: 100, present: 0, total: 0 },
+    };
+    setBatches(prev => prev.map(b =>
+      b.id === selectedBatch.id
+        ? { ...b, enrolled_students: [...b.enrolled_students, newStudent], enrolled_count: b.enrolled_count + 1 }
+        : b
+    ));
+    setIsEnrollOpen(false);
+    setEnrollForm({ student_id: '', student_name: '', grade_level: 'Grade 10' });
   };
 
-  const handleOpenEnroll = (batch) => {
-    setSelectedBatch(batch);
-    setEnrollForm({
-      student_name: '',
-      student_id: '',
-      grade_level: batch.grade_level || 'Grade 10',
-      phone_number: '',
-    });
-    setIsEnrollOpen(true);
-  };
-
-  const handleOpenTracking = async (student, batch) => {
-    setSelectedTrackStudent(student);
-    setSelectedTrackBatch(batch);
-    setIsTrackingOpen(true);
-    setLoadingTracking(true);
-    try {
-      const [recordsRes, statsRes] = await Promise.all([
-        attendanceApi.getRecords({ student_id: student.student_id, batch_id: batch.id }),
-        attendanceApi.getStudentStats(student.student_id, batch.id),
-      ]);
-      setTrackingRecords(recordsRes.data.results || recordsRes.data || []);
-      setTrackingStats(statsRes.data);
-    } catch (err) {
-      console.error('Error fetching attendance tracking:', err);
-    } finally {
-      setLoadingTracking(false);
-    }
-  };
-
-  const handleOpenEditStatus = (rec) => {
-    setEditingRecord(rec);
-    setEditStatusValue(rec.status || 'PRESENT');
-    setEditRemarksValue(rec.remarks || '');
-    const defaultHelper =
-      selectedTrackBatch?.tutor?.user?.full_name ||
-      user?.full_name ||
-      'Tutor Ramesh (Lead Instructor)';
-    setEditAssistedBy(defaultHelper);
-    setIsEditStatusOpen(true);
-  };
-
-  const handleSaveStatusChange = async (e) => {
-    e.preventDefault();
-    if (!editingRecord) return;
-    setSavingStatusChange(true);
-    setStatusChangeSuccess('');
-    try {
-      const res = await attendanceApi.changeStatus(editingRecord.id, {
-        status: editStatusValue,
-        remarks: editRemarksValue,
-        assisted_by: editAssistedBy,
-      });
-      const updated = res.data;
-
-      // Update in local records list
-      setTrackingRecords((prev) =>
-        prev.map((r) => (r.id === updated.id ? updated : r))
-      );
-
-      // Refresh stats
-      if (selectedTrackStudent && selectedTrackBatch) {
-        const statsRes = await attendanceApi.getStudentStats(
-          selectedTrackStudent.student_id,
-          selectedTrackBatch.id
-        );
-        setTrackingStats(statsRes.data);
-      }
-
-      // Refresh batch cards so attendance percentages update
-      loadData();
-
-      setStatusChangeSuccess(`Attendance on ${updated.session_date} successfully updated to ${updated.status}!`);
-      setIsEditStatusOpen(false);
-    } catch (err) {
-      alert(err.response?.data?.error || 'Failed to update attendance status.');
-    } finally {
-      setSavingStatusChange(false);
-    }
-  };
-
-  const handleUnenrollStudent = async (batchId, studentId, studentName) => {
-    if (!confirm(`Are you sure you want to drop ${studentName} from this batch?`)) return;
-    try {
-      await batchApi.unenrollStudent(batchId, studentId);
-      loadData();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Failed to unenroll student.');
-    }
+  const handleUnenroll = (batchId, studentId) => {
+    setBatches(prev => prev.map(b =>
+      b.id === batchId
+        ? { ...b, enrolled_students: b.enrolled_students.filter(s => s.student_id !== studentId), enrolled_count: b.enrolled_count - 1 }
+        : b
+    ));
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Batches & Coaching Classes</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage multi-student coaching batches and 1-on-1 personalized home tutoring groups.
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Batches & Classes</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage coaching batches, enroll students, and track progress.</p>
         </div>
-
-        {isAdmin && (
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl shadow-sm transition"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Batch</span>
+        {(isAdmin || isTutor) && (
+          <button onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm shadow-sm transition">
+            <Plus className="w-4 h-4" /> Create Batch
           </button>
         )}
       </div>
 
-      {/* Grid of Batches */}
-      {loading ? (
-        <div className="py-20 text-center text-gray-400">Loading batches...</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {batches.map((batch) => {
-            const isHome1on1 = batch.batch_type === 'HOME_TUTOR_1ON1';
-            return (
-              <div
-                key={batch.id}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <Badge variant={isHome1on1 ? 'purple' : 'primary'} size="xs">
-                      {isHome1on1 ? 'Home Tutor (1-on-1)' : 'Coaching Batch'}
-                    </Badge>
-                    <Badge variant={batch.status === 'ACTIVE' ? 'success' : 'default'} size="xs">
-                      {batch.status}
-                    </Badge>
-                  </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Batches',  value: batches.length,                                                               color: 'bg-blue-50 text-blue-700'   },
+          { label: 'Group Batches',  value: batches.filter(b => b.batch_type === 'COACHING_GROUP').length,                color: 'bg-indigo-50 text-indigo-700' },
+          { label: '1-on-1 Classes', value: batches.filter(b => b.batch_type === 'HOME_TUTOR_1ON1').length,               color: 'bg-purple-50 text-purple-700' },
+          { label: 'Total Students', value: batches.reduce((s, b) => s + (b.enrolled_count || 0), 0),                   color: 'bg-green-50 text-green-700'  },
+        ].map(c => (
+          <div key={c.label} className={`${c.color} rounded-2xl p-4`}>
+            <p className="text-xs uppercase tracking-wider font-semibold opacity-70">{c.label}</p>
+            <p className="text-2xl font-bold mt-1">{c.value}</p>
+          </div>
+        ))}
+      </div>
 
-                  <h3 className="text-base font-bold text-gray-900 leading-snug">{batch.name}</h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Grade: <span className="font-semibold text-gray-700">{batch.grade_level}</span> • Subject: <span className="font-semibold text-gray-700">{batch.subject}</span>
-                  </p>
-
-                  <div className="mt-4 pt-4 border-t border-gray-100 space-y-2 text-xs text-gray-600">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400">Lead Tutor:</span>
-                      <span className="font-semibold text-gray-800">
-                        {batch.tutor?.user?.full_name || 'Assigned Tutor'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400">Monthly Fee:</span>
-                      <span className="font-semibold text-green-700">Rs. {batch.monthly_fee}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400">Capacity & Enrolled:</span>
-                      <span className={`font-semibold ${batch.is_full ? 'text-amber-600' : 'text-blue-600'}`}>
-                        {batch.enrolled_count} / {batch.capacity} students
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Enrolled Students Directory */}
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Enrolled Students ({batch.enrolled_students?.length || 0})</span>
-                      </span>
-                    </div>
-
-                    {(!batch.enrolled_students || batch.enrolled_students.length === 0) ? (
-                      <p className="text-xs text-gray-400 italic py-1">No students currently enrolled.</p>
-                    ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        {batch.enrolled_students.map((st) => {
-                          const att = st.attendance_stats || { percentage: 100, present: 0, total: 0 };
-                          const attVariant = att.percentage >= 85 ? 'success' : att.percentage >= 70 ? 'warning' : 'danger';
-                          return (
-                            <div
-                              key={st.id}
-                              className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between gap-2"
-                            >
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-gray-900 truncate">{st.student_name}</p>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <Badge variant={attVariant} size="xs">
-                                    {att.percentage}%
-                                  </Badge>
-                                  <span className="text-[10px] text-gray-400">
-                                    ({att.present}/{att.total} classes)
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenTracking(st, batch)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg shadow-2xs transition"
-                                  title="Track Detailed Attendance Records"
-                                >
-                                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                                  <span>Track</span>
-                                </button>
-
-                                {isAdmin && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUnenrollStudent(batch.id, st.student_id, st.student_name)}
-                                    className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50 transition"
-                                    title="Unenroll student from batch"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+      {/* Batch Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {batches.map(batch => (
+          <div key={batch.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-base font-bold text-gray-900">{batch.name}</h3>
+                  <Badge variant={batch.batch_type === 'HOME_TUTOR_1ON1' ? 'purple' : 'primary'} size="xs">
+                    {batch.batch_type === 'HOME_TUTOR_1ON1' ? '1-on-1' : 'Group'}
+                  </Badge>
                 </div>
-
-                {isAdmin && (
-                  <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => handleOpenEnroll(batch)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs font-semibold text-gray-700 rounded-lg transition"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>Enroll Student</span>
-                    </button>
-                  </div>
-                )}
+                <p className="text-xs text-gray-500">
+                  {batch.subject} • {batch.grade_level} • Rs. {batch.monthly_fee}/mo
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Tutor: {batch.tutor?.user?.full_name} • Started: {batch.start_date}
+                </p>
               </div>
-            );
-          })}
-        </div>
-      )}
+              {(isAdmin || isTutor) && (
+                <button
+                  onClick={() => { setSelectedBatch(batch); setIsEnrollOpen(true); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg transition"
+                >
+                  <UserPlus className="w-3.5 h-3.5" /> Enroll Student
+                </button>
+              )}
+            </div>
+
+            {/* Enrolled Students */}
+            <div>
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-blue-500" />
+                Enrolled Students ({batch.enrolled_count})
+              </p>
+              {batch.enrolled_students.length === 0 ? (
+                <p className="text-xs text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded-xl">No students enrolled yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {batch.enrolled_students.map(st => {
+                    const att = st.attendance_stats || { percentage: 100, present: 0, total: 0 };
+                    return (
+                      <div key={st.id} className="flex items-center justify-between p-2.5 bg-gray-50/70 rounded-xl border border-gray-100">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-900">{st.student_name}</p>
+                          <p className="text-[11px] text-gray-500">{st.grade_level}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={att.percentage >= 85 ? 'success' : att.percentage >= 70 ? 'warning' : 'danger'} size="xs">
+                            {att.percentage}% ({att.present}/{att.total})
+                          </Badge>
+                          {(isAdmin || isTutor) && (
+                            <button
+                              onClick={() => handleUnenroll(batch.id, st.student_id)}
+                              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition"
+                              title="Remove student"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Create Batch Modal */}
-      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Create New Batch / Home Tutoring">
+      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Create New Batch" maxWidth="max-w-lg">
         <form onSubmit={handleCreateBatch} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Batch Name</label>
-            <input
-              type="text"
-              required
-              value={newBatch.name}
-              onChange={(e) => setNewBatch({ ...newBatch, name: e.target.value })}
-              placeholder="e.g. Class 11 Physics Board Prep"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Batch Name</label>
+              <input required type="text" value={newBatch.name} onChange={e => setNewBatch(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Physics Batch B"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Type</label>
-              <select
-                value={newBatch.batch_type}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setNewBatch({
-                    ...newBatch,
-                    batch_type: val,
-                    capacity: val === 'HOME_TUTOR_1ON1' ? 1 : 15,
-                  });
-                }}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              >
-                <option value="COACHING_GROUP">Coaching Group</option>
-                <option value="HOME_TUTOR_1ON1">Home Tutor (1-on-1)</option>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Type</label>
+              <select value={newBatch.batch_type} onChange={e => setNewBatch(p => ({ ...p, batch_type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="COACHING_GROUP">Group Coaching</option>
+                <option value="HOME_TUTOR_1ON1">Home Tutor 1-on-1</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Subject</label>
-              <input
-                type="text"
-                required
-                value={newBatch.subject}
-                onChange={(e) => setNewBatch({ ...newBatch, subject: e.target.value })}
-                placeholder="e.g. Mathematics"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              />
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Subject</label>
+              <input required type="text" value={newBatch.subject} onChange={e => setNewBatch(p => ({ ...p, subject: e.target.value }))} placeholder="e.g. Maths"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Grade Level</label>
-              <input
-                type="text"
-                required
-                value={newBatch.grade_level}
-                onChange={(e) => setNewBatch({ ...newBatch, grade_level: e.target.value })}
-                placeholder="e.g. Grade 10"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              />
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Grade Level</label>
+              <input type="text" value={newBatch.grade_level} onChange={e => setNewBatch(p => ({ ...p, grade_level: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Lead Tutor</label>
-              <select
-                required
-                value={newBatch.tutor_id}
-                onChange={(e) => setNewBatch({ ...newBatch, tutor_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              >
-                <option value="">Select Tutor</option>
-                {tutors.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.user?.full_name || t.user?.username} ({t.specialization})
-                  </option>
-                ))}
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Monthly Fee (Rs.)</label>
+              <input type="number" value={newBatch.monthly_fee} onChange={e => setNewBatch(p => ({ ...p, monthly_fee: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Start Date</label>
+              <input type="date" value={newBatch.start_date} onChange={e => setNewBatch(p => ({ ...p, start_date: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Tutor</label>
+              <select value={newBatch.tutor_id} onChange={e => setNewBatch(p => ({ ...p, tutor_id: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                {MOCK_TUTORS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Max Capacity</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={newBatch.capacity}
-                onChange={(e) => setNewBatch({ ...newBatch, capacity: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Monthly Fee (Rs.)</label>
-              <input
-                type="number"
-                min="0"
-                required
-                value={newBatch.monthly_fee}
-                onChange={(e) => setNewBatch({ ...newBatch, monthly_fee: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              />
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Description</label>
+              <textarea rows={2} value={newBatch.description} onChange={e => setNewBatch(p => ({ ...p, description: e.target.value }))} placeholder="Optional batch description..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
             </div>
           </div>
-
-          <div className="flex justify-end gap-3 pt-3">
-            <button
-              type="button"
-              onClick={() => setIsCreateOpen(false)}
-              className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 shadow-sm"
-            >
-              Save Batch
-            </button>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={() => setIsCreateOpen(false)}
+              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+            <button type="submit"
+              className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition">Create Batch</button>
           </div>
         </form>
       </Modal>
 
       {/* Enroll Student Modal */}
-      <Modal
-        isOpen={isEnrollOpen}
-        onClose={() => setIsEnrollOpen(false)}
-        title={`Enroll Student into "${selectedBatch?.name}"`}
-      >
-        <form onSubmit={handleEnrollStudent} className="space-y-4">
+      <Modal isOpen={isEnrollOpen} onClose={() => setIsEnrollOpen(false)} title={`Enroll Student — ${selectedBatch?.name}`} maxWidth="max-w-sm">
+        <form onSubmit={handleEnroll} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
-              Student Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              list="registered-students-list"
-              value={enrollForm.student_name}
-              onChange={(e) => {
-                const val = e.target.value;
-                const matched = students.find(
-                  (s) => (s.user?.full_name || s.user?.username).toLowerCase() === val.toLowerCase()
-                );
-                setEnrollForm((prev) => ({
-                  ...prev,
-                  student_name: val,
-                  student_id: matched ? matched.id : '',
-                  grade_level: matched?.grade_level || prev.grade_level || selectedBatch?.grade_level || '',
-                }));
-              }}
-              placeholder="Type student name (e.g. Rahul Sharma)"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <datalist id="registered-students-list">
-              {students.map((s) => (
-                <option key={s.id} value={s.user?.full_name || s.user?.username}>
-                  Grade: {s.grade_level}
-                </option>
-              ))}
-            </datalist>
-            <p className="text-[11px] text-gray-400 mt-1">
-              Enter any new student's name, or choose from registered students.
-            </p>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Student Name</label>
+            <input required type="text" value={enrollForm.student_name}
+              onChange={e => setEnrollForm(p => ({ ...p, student_name: e.target.value }))}
+              placeholder="Enter student's full name"
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
-
-          {/* Quick select chip pills */}
-          {students.length > 0 && (
-            <div>
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                Quick Select Registered Student:
-              </p>
-              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-gray-50 rounded-lg border border-gray-100">
-                {students.map((s) => {
-                  const sName = s.user?.full_name || s.user?.username;
-                  const isSelected =
-                    enrollForm.student_id === s.id ||
-                    enrollForm.student_name.toLowerCase() === sName.toLowerCase();
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() =>
-                        setEnrollForm({
-                          student_name: sName,
-                          student_id: s.id,
-                          grade_level: s.grade_level,
-                          phone_number: s.user?.phone_number || '',
-                        })
-                      }
-                      className={`px-2.5 py-1 rounded text-xs transition border ${
-                        isSelected
-                          ? 'bg-blue-600 text-white border-blue-600 font-semibold'
-                          : 'bg-white text-gray-700 hover:bg-gray-100 border-gray-200'
-                      }`}
-                    >
-                      {sName} ({s.grade_level})
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Grade / Level</label>
-              <input
-                type="text"
-                value={enrollForm.grade_level}
-                onChange={(e) => setEnrollForm({ ...enrollForm, grade_level: e.target.value })}
-                placeholder="e.g. Grade 10"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">Contact Phone (Optional)</label>
-              <input
-                type="text"
-                value={enrollForm.phone_number}
-                onChange={(e) => setEnrollForm({ ...enrollForm, phone_number: e.target.value })}
-                placeholder="e.g. +91-9876543210"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Grade Level</label>
+            <input type="text" value={enrollForm.grade_level}
+              onChange={e => setEnrollForm(p => ({ ...p, grade_level: e.target.value }))}
+              placeholder="e.g. Grade 10"
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
-
-          <div className="flex justify-end gap-3 pt-3">
-            <button
-              type="button"
-              onClick={() => setIsEnrollOpen(false)}
-              className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 shadow-sm"
-            >
-              Enroll Student
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={() => setIsEnrollOpen(false)}
+              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">Cancel</button>
+            <button type="submit"
+              className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+              <UserCheck className="w-4 h-4" /> Enroll
             </button>
           </div>
         </form>
-      </Modal>
-
-      {/* Student Attendance Tracking Modal */}
-      <Modal
-        isOpen={isTrackingOpen}
-        onClose={() => setIsTrackingOpen(false)}
-        title={`Attendance Tracking: ${selectedTrackStudent?.student_name || 'Student'}`}
-        maxWidth="max-w-2xl"
-      >
-        <div className="space-y-4">
-          <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 flex items-center justify-between text-xs text-blue-900">
-            <div>
-              <span className="font-semibold text-gray-700">Batch:</span> {selectedTrackBatch?.name}
-            </div>
-            <div>
-              <span className="font-semibold text-gray-700">Grade:</span> {selectedTrackStudent?.grade_level}
-            </div>
-          </div>
-
-          {/* Quick Stats Grid */}
-          {/* Success Notification after status change */}
-          {statusChangeSuccess && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-xs font-semibold flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-                <span>{statusChangeSuccess}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStatusChangeSuccess('')}
-                className="text-[10px] text-green-700 underline font-normal"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {/* Metric Summary Counters */}
-          {trackingStats && (
-            <div className="grid grid-cols-4 gap-2 text-center">
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <p className="text-[10px] uppercase font-bold text-gray-400">Total Classes</p>
-                <p className="text-lg font-bold text-gray-900 mt-0.5">{trackingStats.total_sessions}</p>
-              </div>
-              <div className="p-3 bg-green-50 rounded-xl border border-green-100">
-                <p className="text-[10px] uppercase font-bold text-green-700">Present</p>
-                <p className="text-lg font-bold text-green-700 mt-0.5">{trackingStats.present_count}</p>
-              </div>
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                <p className="text-[10px] uppercase font-bold text-amber-700">Late / Excused</p>
-                <p className="text-lg font-bold text-amber-700 mt-0.5">
-                  {(trackingStats.late_count || 0) + (trackingStats.excused_count || 0)}
-                </p>
-              </div>
-              <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
-                <p className="text-[10px] uppercase font-bold text-blue-700">Attendance Rate</p>
-                <p className="text-lg font-bold text-blue-700 mt-0.5">{trackingStats.attendance_percentage}%</p>
-              </div>
-            </div>
-          )}
-
-          {/* Records Table */}
-          <div className="border border-gray-100 rounded-xl overflow-hidden shadow-2xs">
-            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100 font-bold text-xs text-gray-700 uppercase tracking-wider flex items-center justify-between">
-              <span>Session Attendance History</span>
-              <span className="text-[11px] font-normal text-gray-500">{trackingRecords.length} sessions logged</span>
-            </div>
-            {loadingTracking ? (
-              <div className="py-10 text-center text-xs text-gray-400">Loading attendance history...</div>
-            ) : trackingRecords.length === 0 ? (
-              <div className="py-10 text-center text-xs text-gray-400">
-                No class attendance recorded yet for this student in this batch.
-              </div>
-            ) : (
-              <div className="max-h-64 overflow-y-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 font-medium">
-                    <tr>
-                      <th className="px-3.5 py-2">Date & Time</th>
-                      <th className="px-3.5 py-2">Topic Covered</th>
-                      <th className="px-3.5 py-2">Status</th>
-                      <th className="px-3.5 py-2">Remarks</th>
-                      <th className="px-3.5 py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {trackingRecords.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-gray-50/50 transition">
-                        <td className="px-3.5 py-2.5 whitespace-nowrap font-semibold text-gray-900">
-                          {rec.session_date}
-                          <span className="block text-[10px] font-normal text-gray-400">{rec.session_time}</span>
-                        </td>
-                        <td className="px-3.5 py-2.5 text-gray-600 max-w-xs truncate">
-                          {rec.topic_covered || '—'}
-                        </td>
-                        <td className="px-3.5 py-2.5 whitespace-nowrap">
-                          <Badge
-                            variant={
-                              rec.status === 'PRESENT'
-                                ? 'success'
-                                : rec.status === 'ABSENT'
-                                ? 'danger'
-                                : rec.status === 'LATE'
-                                ? 'warning'
-                                : 'primary'
-                            }
-                            size="xs"
-                          >
-                            {rec.status}
-                          </Badge>
-                        </td>
-                        <td className="px-3.5 py-2.5 text-gray-500 italic max-w-xs truncate">
-                          {rec.remarks || '—'}
-                        </td>
-                        <td className="px-3.5 py-2.5 whitespace-nowrap text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditStatus(rec)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg shadow-2xs transition"
-                            title="Change attendance status accordingly with user help"
-                          >
-                            <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                            <span>{isStudent ? 'Change with Help' : 'Change Status'}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end pt-2">
-            <button
-              type="button"
-              onClick={() => setIsTrackingOpen(false)}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-semibold rounded-lg transition"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal: Change Attendance Status with User Assistance */}
-      <Modal
-        isOpen={isEditStatusOpen}
-        onClose={() => setIsEditStatusOpen(false)}
-        title="Change Attendance Status & Record"
-        maxWidth="max-w-md"
-      >
-        {editingRecord && (
-          <form onSubmit={handleSaveStatusChange} className="space-y-4">
-            <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 text-xs text-blue-900">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-900">{selectedTrackStudent?.student_name}</span>
-                <span className="font-semibold text-blue-700">{editingRecord.session_date}</span>
-              </div>
-              <p className="text-[11px] text-gray-600 mt-1">
-                Batch: <span className="font-medium">{selectedTrackBatch?.name}</span>
-              </p>
-              <div className="mt-2 flex items-center gap-1.5">
-                <span className="text-gray-500 text-[11px]">Current Status:</span>
-                <Badge
-                  variant={
-                    editingRecord.status === 'PRESENT'
-                      ? 'success'
-                      : editingRecord.status === 'ABSENT'
-                      ? 'danger'
-                      : editingRecord.status === 'LATE'
-                      ? 'warning'
-                      : 'primary'
-                  }
-                  size="xs"
-                >
-                  {editingRecord.status}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Select New Status */}
-            <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
-                Select New Status
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { val: 'PRESENT', label: 'Present', color: 'border-green-500 bg-green-50 text-green-700' },
-                  { val: 'ABSENT', label: 'Absent', color: 'border-red-500 bg-red-50 text-red-700' },
-                  { val: 'LATE', label: 'Late', color: 'border-amber-500 bg-amber-50 text-amber-700' },
-                  { val: 'EXCUSED', label: 'Excused', color: 'border-blue-500 bg-blue-50 text-blue-700' },
-                ].map((opt) => (
-                  <button
-                    key={opt.val}
-                    type="button"
-                    onClick={() => setEditStatusValue(opt.val)}
-                    className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between ${
-                      editStatusValue === opt.val
-                        ? `${opt.color} ring-2 ring-blue-400/30`
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span>{opt.label}</span>
-                    {editStatusValue === opt.val && <CheckCircle2 className="w-4 h-4" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* User / Tutor Assisting */}
-            <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                User / Tutor Assisting with Change
-              </label>
-              <input
-                type="text"
-                required
-                value={editAssistedBy}
-                onChange={(e) => setEditAssistedBy(e.target.value)}
-                placeholder="e.g. Tutor Ramesh / Admin User"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <p className="text-[10px] text-gray-400 mt-1">
-                Records the authority / instructor who assisted and verified this status adjustment.
-              </p>
-            </div>
-
-            {/* Reason / Correction Remarks */}
-            <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                Reason / Note for Status Change
-              </label>
-              <textarea
-                rows={2}
-                value={editRemarksValue}
-                onChange={(e) => setEditRemarksValue(e.target.value)}
-                placeholder="e.g. Attended makeup session online / Doctor leave slip verified"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setIsEditStatusOpen(false)}
-                className="px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={savingStatusChange}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-50"
-              >
-                {savingStatusChange ? 'Saving Change...' : 'Confirm Status Change'}
-              </button>
-            </div>
-          </form>
-        )}
       </Modal>
     </div>
   );

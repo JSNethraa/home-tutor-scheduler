@@ -27,7 +27,9 @@ class EnrolledStudentSummarySerializer(serializers.ModelSerializer):
         present = records.filter(status='PRESENT').count()
         late = records.filter(status='LATE').count()
         absent = records.filter(status='ABSENT').count()
-        percentage = round(((present + (late * 0.5)) / total * 100), 1) if total > 0 else 100.0
+        # Exclude Excused from denominator; Late counts as full attendance
+        effective_total = present + absent + late
+        percentage = round(((present + late) / effective_total * 100), 1) if effective_total > 0 else 100.0
         return {
             'total': total,
             'present': present,
