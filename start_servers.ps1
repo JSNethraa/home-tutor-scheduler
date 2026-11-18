@@ -1,4 +1,4 @@
-﻿# Home Tutor & Coaching Batch Scheduler PowerShell Launcher
+# Home Tutor & Coaching Batch Scheduler PowerShell Launcher
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

@@ -8,7 +8,7 @@ from .models import ClassSchedule, ClassSession
 from .serializers import (
     ClassScheduleSerializer,
     ClassSessionSerializer,
-    ConflictCheckSerializer,
+    Serializer,
     GenerateSessionsSerializer,
 )
 from .services.conflict_checker import validate_scheduling_conflicts
