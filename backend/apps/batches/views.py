@@ -24,7 +24,7 @@ class BatchViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Batch.objects.select_related('tutor__user').prefetch_related('enrollments').all()
+        queryset = Batch.objects.select_related('tutor__user').prefetch_related('enrollments__student__user').all()
 
         # If tutor, show their assigned batches
         if user.role == 'TUTOR' and hasattr(user, 'tutor_profile'):

@@ -30,6 +30,10 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
         if student_id:
             qs = qs.filter(student_id=student_id)
 
+        batch_id = self.request.query_params.get('batch_id')
+        if batch_id:
+            qs = qs.filter(session__batch_id=batch_id)
+
         # Scoping based on user role
         if user.role == 'TUTOR' and hasattr(user, 'tutor_profile'):
             return qs.filter(session__tutor=user.tutor_profile)
@@ -160,6 +164,9 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
                 return Response({'error': 'student_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         records = AttendanceRecord.objects.filter(student_id=student_id)
+        batch_id = request.query_params.get('batch_id')
+        if batch_id:
+            records = records.filter(session__batch_id=batch_id)
         total = records.count()
         present = records.filter(status='PRESENT').count()
         absent = records.filter(status='ABSENT').count()

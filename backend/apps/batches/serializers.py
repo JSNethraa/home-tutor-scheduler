@@ -3,6 +3,40 @@ from .models import Batch, BatchEnrollment
 from apps.accounts.serializers import TutorProfileSerializer, StudentProfileSerializer
 from apps.accounts.models import TutorProfile, StudentProfile
 
+class EnrolledStudentSummarySerializer(serializers.ModelSerializer):
+    student_id = serializers.IntegerField(source='student.id')
+    student_name = serializers.SerializerMethodField()
+    grade_level = serializers.CharField(source='student.grade_level')
+    phone_number = serializers.CharField(source='student.user.phone_number', default='')
+    attendance_stats = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BatchEnrollment
+        fields = [
+            'id', 'student_id', 'student_name', 'grade_level',
+            'phone_number', 'enrolled_on', 'status', 'attendance_stats'
+        ]
+
+    def get_student_name(self, obj):
+        return obj.student.user.get_full_name() or obj.student.user.username
+
+    def get_attendance_stats(self, obj):
+        from apps.attendance.models import AttendanceRecord
+        records = AttendanceRecord.objects.filter(student=obj.student, session__batch=obj.batch)
+        total = records.count()
+        present = records.filter(status='PRESENT').count()
+        late = records.filter(status='LATE').count()
+        absent = records.filter(status='ABSENT').count()
+        percentage = round(((present + (late * 0.5)) / total * 100), 1) if total > 0 else 100.0
+        return {
+            'total': total,
+            'present': present,
+            'absent': absent,
+            'late': late,
+            'percentage': percentage,
+        }
+
+
 class BatchEnrollmentSerializer(serializers.ModelSerializer):
     student = StudentProfileSerializer(read_only=True)
     student_id = serializers.PrimaryKeyRelatedField(
@@ -26,15 +60,21 @@ class BatchSerializer(serializers.ModelSerializer):
     )
     enrolled_count = serializers.IntegerField(read_only=True)
     is_full = serializers.BooleanField(read_only=True)
+    enrolled_students = serializers.SerializerMethodField()
 
     class Meta:
         model = Batch
         fields = [
             'id', 'name', 'batch_type', 'subject', 'grade_level',
             'tutor', 'tutor_id', 'capacity', 'enrolled_count', 'is_full',
-            'monthly_fee', 'start_date', 'end_date', 'status', 'description', 'created_at'
+            'monthly_fee', 'start_date', 'end_date', 'status', 'description',
+            'enrolled_students', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'enrolled_students']
+
+    def get_enrolled_students(self, obj):
+        active_enrollments = obj.enrollments.filter(status=BatchEnrollment.Status.ACTIVE).select_related('student__user')
+        return EnrolledStudentSummarySerializer(active_enrollments, many=True).data
 
 
 class BatchDetailSerializer(BatchSerializer):

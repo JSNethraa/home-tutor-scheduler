@@ -27,9 +27,10 @@ export const scheduleApi = {
 };
 
 export const attendanceApi = {
+  getRecords: (params) => client.get('/attendance/', { params }),
   getSessionSheet: (sessionId) => client.get('/attendance/session_sheet/', { params: { session_id: sessionId } }),
   submitBulk: (data) => client.post('/attendance/bulk_mark/', data),
-  getStudentStats: (studentId) => client.get('/attendance/student_stats/', { params: { student_id: studentId } }),
+  getStudentStats: (studentId, batchId) => client.get('/attendance/student_stats/', { params: { student_id: studentId, batch_id: batchId } }),
 };
 
 export const feeApi = {

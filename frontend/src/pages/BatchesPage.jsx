@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { batchApi, userApi } from '../api';
+import { batchApi, userApi, attendanceApi } from '../api';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
-import { Users, Plus, UserPlus, BookOpen, Calendar, CheckCircle } from 'lucide-react';
+import { Users, Plus, UserPlus, BookOpen, Calendar, CheckCircle, Clock, X, AlertCircle } from 'lucide-react';
 
 export const BatchesPage = () => {
   const { isAdmin } = useAuth();
@@ -16,6 +16,14 @@ export const BatchesPage = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEnrollOpen, setIsEnrollOpen] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState(null);
+
+  // Attendance tracking modal state
+  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [selectedTrackStudent, setSelectedTrackStudent] = useState(null);
+  const [selectedTrackBatch, setSelectedTrackBatch] = useState(null);
+  const [trackingRecords, setTrackingRecords] = useState([]);
+  const [trackingStats, setTrackingStats] = useState(null);
+  const [loadingTracking, setLoadingTracking] = useState(false);
 
   // New batch form state
   const [newBatch, setNewBatch] = useState({
@@ -118,6 +126,35 @@ export const BatchesPage = () => {
     setIsEnrollOpen(true);
   };
 
+  const handleOpenTracking = async (student, batch) => {
+    setSelectedTrackStudent(student);
+    setSelectedTrackBatch(batch);
+    setIsTrackingOpen(true);
+    setLoadingTracking(true);
+    try {
+      const [recordsRes, statsRes] = await Promise.all([
+        attendanceApi.getRecords({ student_id: student.student_id, batch_id: batch.id }),
+        attendanceApi.getStudentStats(student.student_id, batch.id),
+      ]);
+      setTrackingRecords(recordsRes.data.results || recordsRes.data || []);
+      setTrackingStats(statsRes.data);
+    } catch (err) {
+      console.error('Error fetching attendance tracking:', err);
+    } finally {
+      setLoadingTracking(false);
+    }
+  };
+
+  const handleUnenrollStudent = async (batchId, studentId, studentName) => {
+    if (!confirm(`Are you sure you want to drop ${studentName} from this batch?`)) return;
+    try {
+      await batchApi.unenrollStudent(batchId, studentId);
+      loadData();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to unenroll student.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -185,6 +222,68 @@ export const BatchesPage = () => {
                         {batch.enrolled_count} / {batch.capacity} students
                       </span>
                     </div>
+                  </div>
+
+                  {/* Enrolled Students Directory */}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Enrolled Students ({batch.enrolled_students?.length || 0})</span>
+                      </span>
+                    </div>
+
+                    {(!batch.enrolled_students || batch.enrolled_students.length === 0) ? (
+                      <p className="text-xs text-gray-400 italic py-1">No students currently enrolled.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {batch.enrolled_students.map((st) => {
+                          const att = st.attendance_stats || { percentage: 100, present: 0, total: 0 };
+                          const attVariant = att.percentage >= 85 ? 'success' : att.percentage >= 70 ? 'warning' : 'danger';
+                          return (
+                            <div
+                              key={st.id}
+                              className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-900 truncate">{st.student_name}</p>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <Badge variant={attVariant} size="xs">
+                                    {att.percentage}%
+                                  </Badge>
+                                  <span className="text-[10px] text-gray-400">
+                                    ({att.present}/{att.total} classes)
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTracking(st, batch)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg shadow-2xs transition"
+                                  title="Track Detailed Attendance Records"
+                                >
+                                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>Track</span>
+                                </button>
+
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUnenrollStudent(batch.id, st.student_id, st.student_name)}
+                                    className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50 transition"
+                                    title="Unenroll student from batch"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -448,6 +547,119 @@ export const BatchesPage = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Student Attendance Tracking Modal */}
+      <Modal
+        isOpen={isTrackingOpen}
+        onClose={() => setIsTrackingOpen(false)}
+        title={`Attendance Tracking: ${selectedTrackStudent?.student_name || 'Student'}`}
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 flex items-center justify-between text-xs text-blue-900">
+            <div>
+              <span className="font-semibold text-gray-700">Batch:</span> {selectedTrackBatch?.name}
+            </div>
+            <div>
+              <span className="font-semibold text-gray-700">Grade:</span> {selectedTrackStudent?.grade_level}
+            </div>
+          </div>
+
+          {/* Quick Stats Grid */}
+          {trackingStats && (
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <p className="text-[10px] uppercase font-bold text-gray-400">Total Classes</p>
+                <p className="text-lg font-bold text-gray-900 mt-0.5">{trackingStats.total_sessions}</p>
+              </div>
+              <div className="p-3 bg-green-50 rounded-xl border border-green-100">
+                <p className="text-[10px] uppercase font-bold text-green-700">Present</p>
+                <p className="text-lg font-bold text-green-700 mt-0.5">{trackingStats.present_count}</p>
+              </div>
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                <p className="text-[10px] uppercase font-bold text-amber-700">Late / Excused</p>
+                <p className="text-lg font-bold text-amber-700 mt-0.5">
+                  {(trackingStats.late_count || 0) + (trackingStats.excused_count || 0)}
+                </p>
+              </div>
+              <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                <p className="text-[10px] uppercase font-bold text-blue-700">Attendance Rate</p>
+                <p className="text-lg font-bold text-blue-700 mt-0.5">{trackingStats.attendance_percentage}%</p>
+              </div>
+            </div>
+          )}
+
+          {/* Records Table */}
+          <div className="border border-gray-100 rounded-xl overflow-hidden shadow-2xs">
+            <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-100 font-bold text-xs text-gray-700 uppercase tracking-wider flex items-center justify-between">
+              <span>Session Attendance History</span>
+              <span className="text-[11px] font-normal text-gray-500">{trackingRecords.length} sessions logged</span>
+            </div>
+            {loadingTracking ? (
+              <div className="py-10 text-center text-xs text-gray-400">Loading attendance history...</div>
+            ) : trackingRecords.length === 0 ? (
+              <div className="py-10 text-center text-xs text-gray-400">
+                No class attendance recorded yet for this student in this batch.
+              </div>
+            ) : (
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 font-medium">
+                    <tr>
+                      <th className="px-3.5 py-2">Date & Time</th>
+                      <th className="px-3.5 py-2">Topic Covered</th>
+                      <th className="px-3.5 py-2">Status</th>
+                      <th className="px-3.5 py-2">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {trackingRecords.map((rec) => (
+                      <tr key={rec.id} className="hover:bg-gray-50/50 transition">
+                        <td className="px-3.5 py-2.5 whitespace-nowrap font-semibold text-gray-900">
+                          {rec.session_date}
+                          <span className="block text-[10px] font-normal text-gray-400">{rec.session_time}</span>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-gray-600 max-w-xs truncate">
+                          {rec.topic_covered || '—'}
+                        </td>
+                        <td className="px-3.5 py-2.5 whitespace-nowrap">
+                          <Badge
+                            variant={
+                              rec.status === 'PRESENT'
+                                ? 'success'
+                                : rec.status === 'ABSENT'
+                                ? 'danger'
+                                : rec.status === 'LATE'
+                                ? 'warning'
+                                : 'primary'
+                            }
+                            size="xs"
+                          >
+                            {rec.status}
+                          </Badge>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-gray-500 italic max-w-xs truncate">
+                          {rec.remarks || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => setIsTrackingOpen(false)}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-semibold rounded-lg transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
