@@ -1,6 +1,5 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
   Users,
@@ -12,8 +11,6 @@ import {
 } from 'lucide-react';
 
 export const Sidebar = () => {
-  const { user } = useAuth();
-
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Batches & Classes', href: '/batches', icon: Users },
@@ -36,25 +33,15 @@ export const Sidebar = () => {
         </div>
       </div>
 
-      {/* Role badge */}
-      <div className="px-6 py-4 bg-slate-950/40 border-b border-slate-800/80">
-        <p className="text-xs uppercase tracking-wider text-slate-400 font-medium">Logged in as</p>
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-sm font-semibold text-slate-200 truncate">{user?.full_name || user?.username}</span>
-          <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-900/60 text-blue-300 rounded border border-blue-700/50">
-            {user?.role}
-          </span>
-        </div>
-      </div>
-
       {/* Nav items */}
-      <nav className="flex-1 px-4 py-4 space-y-1">
+      <nav className="flex-1 px-4 py-6 space-y-1">
         {navigation.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
               key={item.name}
               to={item.href}
+              end={item.href === '/'}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
                   isActive
@@ -63,7 +50,7 @@ export const Sidebar = () => {
                 }`
               }
             >
-              <Icon className="w-5 h-5 text-slate-400" />
+              <Icon className="w-5 h-5 flex-shrink-0" />
               <span>{item.name}</span>
             </NavLink>
           );

@@ -8,10 +8,9 @@ from .models import ClassSchedule, ClassSession
 from .serializers import (
     ClassScheduleSerializer,
     ClassSessionSerializer,
-    Serializer,
+    ConflictCheckSerializer,
     GenerateSessionsSerializer,
 )
-from .services.conflict_checker import validate_scheduling_conflicts
 from apps.accounts.permissions import IsAdminUserRole, IsAdminOrTutor
 from apps.batches.models import Batch
 
